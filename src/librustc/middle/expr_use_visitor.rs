@@ -318,6 +318,7 @@ impl<'a, 'gcx, 'tcx> ExprUseVisitor<'a, 'gcx, 'tcx> {
                 arg.hir_id,
                 arg.pat.span,
                 fn_body_scope_r, // Args live only as long as the fn body.
+                None,
                 arg_ty));
 
             self.walk_irrefutable_pat(arg_cmt, &arg.pat);

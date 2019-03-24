@@ -98,7 +98,7 @@ impl<'a, 'tcx> GuaranteeLifetimeContext<'a, 'tcx> {
 
         match cmt.cat {
             Categorization::ThreadLocal(temp_scope) |
-            Categorization::Rvalue(temp_scope) => {
+            Categorization::Rvalue(temp_scope, _) => {
                 temp_scope
             }
             Categorization::Upvar(..) => {

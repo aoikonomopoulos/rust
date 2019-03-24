@@ -365,7 +365,7 @@ impl<'a, 'tcx> CheckLoanCtxt<'a, 'tcx> {
                 Categorization::Upvar(..) => true,
 
                 Categorization::ThreadLocal(region) |
-                Categorization::Rvalue(region) => {
+                Categorization::Rvalue(region, _) => {
                     // Rvalues promoted to 'static are no longer local
                     if let RegionKind::ReStatic = *region {
                         false

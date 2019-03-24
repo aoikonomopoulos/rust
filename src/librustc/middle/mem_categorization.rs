@@ -84,7 +84,7 @@ use crate::util::nodemap::ItemLocalSet;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Categorization<'tcx> {
-    Rvalue(ty::Region<'tcx>),            // temporary val, argument is its scope
+    Rvalue(ty::Region<'tcx>, Option<Box<cmt_<'tcx>>>), // scope of temporary val, cmt_ of previous
     ThreadLocal(ty::Region<'tcx>),       // value that cannot move, but still restricted in scope
     StaticItem,
     Upvar(Upvar),                        // upvar referenced by closure env
@@ -611,7 +611,7 @@ impl<'a, 'gcx, 'tcx> MemCategorizationContext<'a, 'gcx, 'tcx> {
                         ty: target,
                         mutbl: deref.mutbl,
                     });
-                    self.cat_rvalue_node(expr.hir_id, expr.span, ref_ty)
+                    self.cat_rvalue_node(expr.hir_id, Some(previous()?), expr.span, ref_ty)
                 } else {
                     previous()?
                 });
@@ -626,7 +626,7 @@ impl<'a, 'gcx, 'tcx> MemCategorizationContext<'a, 'gcx, 'tcx> {
             adjustment::Adjust::Borrow(_) |
             adjustment::Adjust::Unsize => {
                 // Result is an rvalue.
-                Ok(self.cat_rvalue_node(expr.hir_id, expr.span, target))
+                Ok(self.cat_rvalue_node(expr.hir_id, Some(previous()?), expr.span, target))
             }
         }
     }
@@ -689,7 +689,8 @@ impl<'a, 'gcx, 'tcx> MemCategorizationContext<'a, 'gcx, 'tcx> {
             hir::ExprKind::Lit(..) | hir::ExprKind::Break(..) |
             hir::ExprKind::Continue(..) | hir::ExprKind::Struct(..) | hir::ExprKind::Repeat(..) |
             hir::ExprKind::InlineAsm(..) | hir::ExprKind::Box(..) | hir::ExprKind::Err => {
-                Ok(self.cat_rvalue_node(expr.hir_id, expr.span, expr_ty))
+                Ok(self.cat_rvalue_node(expr.hir_id, None, // FIXME?
+                                        expr.span, expr_ty))
             }
         }
     }
@@ -706,7 +707,8 @@ impl<'a, 'gcx, 'tcx> MemCategorizationContext<'a, 'gcx, 'tcx> {
         match def {
             Def::StructCtor(..) | Def::VariantCtor(..) | Def::Const(..) | Def::ConstParam(..) |
             Def::AssociatedConst(..) | Def::Fn(..) | Def::Method(..) | Def::SelfCtor(..) => {
-                Ok(self.cat_rvalue_node(hir_id, span, expr_ty))
+                Ok(self.cat_rvalue_node(hir_id, None, // FIXME?
+                                        span, expr_ty))
             }
 
             Def::Static(def_id, mutbl) => {
@@ -942,6 +944,7 @@ impl<'a, 'gcx, 'tcx> MemCategorizationContext<'a, 'gcx, 'tcx> {
 
     pub fn cat_rvalue_node(&self,
                            hir_id: hir::HirId,
+                           base_cmt: Option<cmt_<'tcx>>,
                            span: Span,
                            expr_ty: Ty<'tcx>)
                            -> cmt_<'tcx> {
@@ -969,7 +972,7 @@ impl<'a, 'gcx, 'tcx> MemCategorizationContext<'a, 'gcx, 'tcx> {
         } else {
             self.temporary_scope(hir_id.local_id)
         };
-        let ret = self.cat_rvalue(hir_id, span, re, expr_ty);
+        let ret = self.cat_rvalue(hir_id, span, re, base_cmt, expr_ty);
         debug!("cat_rvalue_node ret {:?}", ret);
         ret
     }
@@ -978,11 +981,12 @@ impl<'a, 'gcx, 'tcx> MemCategorizationContext<'a, 'gcx, 'tcx> {
                       cmt_hir_id: hir::HirId,
                       span: Span,
                       temp_scope: ty::Region<'tcx>,
+                      base_cmt: Option<cmt_<'tcx>>,
                       expr_ty: Ty<'tcx>) -> cmt_<'tcx> {
         let ret = cmt_ {
             hir_id: cmt_hir_id,
             span:span,
-            cat:Categorization::Rvalue(temp_scope),
+            cat:Categorization::Rvalue(temp_scope, base_cmt.map(|cmt| Box::new(cmt.clone()))),
             mutbl:McDeclared,
             ty:expr_ty,
             note: NoteNone
@@ -1037,7 +1041,9 @@ impl<'a, 'gcx, 'tcx> MemCategorizationContext<'a, 'gcx, 'tcx> {
             mutbl,
         });
 
-        let base_cmt = Rc::new(self.cat_rvalue_node(expr.hir_id, expr.span, ref_ty));
+        let base_cmt = self.cat_expr(base)?;
+        let base_cmt = Rc::new(self.cat_rvalue_node(expr.hir_id, Some(base_cmt),
+                                                    expr.span, ref_ty));
         self.cat_deref(expr, base_cmt, note)
     }
 

@@ -934,7 +934,7 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
     }
 
     fn check_safety_of_rvalue_destructor_if_necessary(&mut self, cmt: &mc::cmt_<'tcx>, span: Span) {
-        if let Categorization::Rvalue(region) = cmt.cat {
+        if let Categorization::Rvalue(region, _) = cmt.cat {
             match *region {
                 ty::ReScope(rvalue_scope) => {
                     let typ = self.resolve_type(cmt.ty);
@@ -1088,7 +1088,9 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
             let arg_ty = self.node_ty(arg.hir_id);
             let re_scope = self.tcx.mk_region(ty::ReScope(body_scope));
             let arg_cmt = self.with_mc(|mc| {
-                Rc::new(mc.cat_rvalue(arg.hir_id, arg.pat.span, re_scope, arg_ty))
+                Rc::new(mc.cat_rvalue(arg.hir_id, arg.pat.span, re_scope,
+                                      None, // FIXME
+                                      arg_ty))
             });
             debug!("arg_ty={:?} arg_cmt={:?} arg={:?}", arg_ty, arg_cmt, arg);
             self.link_pattern(arg_cmt, &arg.pat);
