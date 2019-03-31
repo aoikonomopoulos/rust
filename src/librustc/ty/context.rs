@@ -436,6 +436,8 @@ pub struct TypeckTables<'tcx> {
     /// leading to the member of the struct or tuple that is used instead of the
     /// entire variable.
     pub upvar_list: ty::UpvarListMap,
+
+    pub upvar_captures: ty::UpvarMap<'tcx>,
 }
 
 impl<'tcx> TypeckTables<'tcx> {
@@ -461,6 +463,7 @@ impl<'tcx> TypeckTables<'tcx> {
             free_region_map: Default::default(),
             concrete_existential_types: Default::default(),
             upvar_list: Default::default(),
+            upvar_captures: Default::default(),
         }
     }
 
@@ -759,6 +762,7 @@ impl<'a, 'gcx> HashStable<StableHashingContext<'a>> for TypeckTables<'gcx> {
             ref free_region_map,
             ref concrete_existential_types,
             ref upvar_list,
+            ref upvar_captures,
 
         } = *self;
 
@@ -803,6 +807,30 @@ impl<'a, 'gcx> HashStable<StableHashingContext<'a>> for TypeckTables<'gcx> {
             free_region_map.hash_stable(hcx, hasher);
             concrete_existential_types.hash_stable(hcx, hasher);
             upvar_list.hash_stable(hcx, hasher);
+
+            hash_stable_hashmap(hcx, hasher, upvar_captures, |up_var_id, hcx| {
+                // FIXME: dedup
+                let ty::UpvarId {
+                    var_path,
+                    closure_expr_id
+                } = *up_var_id;
+
+                let local_id_root =
+                    local_id_root.expect("trying to hash invalid TypeckTables");
+
+                let var_owner_def_id = DefId {
+                    krate: local_id_root.krate,
+                    index: var_path.hir_id.owner,
+                };
+                let closure_def_id = DefId {
+                    krate: local_id_root.krate,
+                    index: closure_expr_id.to_def_id().index,
+                };
+                (hcx.def_path_hash(var_owner_def_id),
+                 var_path.hir_id.local_id,
+                 hcx.def_path_hash(closure_def_id))
+            });
+
         })
     }
 }

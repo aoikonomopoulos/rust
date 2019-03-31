@@ -184,6 +184,13 @@ impl_stable_hash_for!(enum ::syntax::ast::Mutability {
     Mutable
 });
 
+impl<HCX> ToStableHashKey<HCX> for ty::CapturePath where ty::CapturePath: HashStable<HCX> {
+    type KeyType = ty::CapturePath;
+    fn to_stable_hash_key(&self, _: &HCX) -> Self::KeyType {
+        self.clone()
+    }
+}
+
 impl<'a> ToStableHashKey<StableHashingContext<'a>> for region::Scope {
     type KeyType = region::Scope;
 
