@@ -815,7 +815,7 @@ pub enum CapturePathComponent {
 }
 
 #[derive(Clone, Debug, Eq, Hash, HashStable, Ord, PartialEq, PartialOrd, RustcEncodable, RustcDecodable)]
-pub struct CapturePath(Vec<CapturePathComponent>);
+pub struct CapturePath(pub Vec<CapturePathComponent>);
 pub type UpvarCapturePathMap<'tcx> = FxHashMap<CapturePath, UpvarCapture<'tcx>>;
 pub type UpvarMap<'tcx> = FxHashMap<UpvarId, UpvarCapturePathMap<'tcx>>;
 
