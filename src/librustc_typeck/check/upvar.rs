@@ -172,6 +172,8 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             current_closure_kind: ty::ClosureKind::LATTICE_BOTTOM,
             current_origin: None,
             adjust_upvar_captures: ty::UpvarCaptureMap::default(),
+            span: span,
+            capture_clause: capture_clause,
             upvar_captures: ty::UpvarMap::default(),
         };
         euv::ExprUseVisitor::with_infer(
@@ -307,6 +309,8 @@ struct InferBorrowKind<'a, 'gcx: 'a + 'tcx, 'tcx: 'a> {
     // access we need (ref, ref mut, move, etc).
     adjust_upvar_captures: ty::UpvarCaptureMap<'tcx>,
 
+    span: Span,
+    capture_clause: hir::CaptureClause,
     upvar_captures: ty::UpvarMap<'tcx>,
 }
 
@@ -366,6 +370,13 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
 
                     self.adjust_upvar_captures
                         .insert(upvar_id, ty::UpvarCapture::ByValue);
+                    let path = ty::CapturePath(vec![
+                        ty::CapturePathComponent::Interior("dummy".to_string())
+                    ]);
+                    let paths_for_upvar = self
+                        .upvar_captures.entry(upvar_id)
+                        .or_insert_with(ty::UpvarCapturePathMap::default);
+                    paths_for_upvar.insert(path, ty::UpvarCapture::ByValue);
                 }
                 mc::NoteClosureEnv(upvar_id) => {
                     // we get just a closureenv ref if this is a
@@ -539,6 +550,51 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
                 }
             }
         }
+        let path = ty::CapturePath(vec![
+            ty::CapturePathComponent::Interior("dummy".to_string())
+        ]);
+        let paths_for_upvar = self.
+            upvar_captures.entry(upvar_id)
+            .or_insert_with(ty::UpvarCapturePathMap::default);
+        let fcx = self.fcx;
+        let span = self.span;
+        let capture_clause = self.capture_clause;
+        let capture = paths_for_upvar.get(&path).cloned().unwrap_or_else(|| {
+            match capture_clause {
+                hir::CaptureByValue => ty::UpvarCapture::ByValue,
+                hir::CaptureByRef => {
+                    let origin = UpvarRegion(upvar_id, span);
+                    let freevar_region = fcx.next_region_var(origin);
+                    let upvar_borrow = ty::UpvarBorrow {
+                        kind: ty::ImmBorrow,
+                        region: freevar_region,
+                    };
+                    ty::UpvarCapture::ByRef(upvar_borrow)
+                }
+            }
+        });
+        match capture {
+            ty::UpvarCapture::ByValue => {
+                // Upvar is already by-value, the strongest criteria.
+            }
+            ty::UpvarCapture::ByRef(mut upvar_borrow) => {
+                match (upvar_borrow.kind, kind) {
+                    // Take RHS:
+                    (ty::ImmBorrow, ty::UniqueImmBorrow)
+                    | (ty::ImmBorrow, ty::MutBorrow)
+                    | (ty::UniqueImmBorrow, ty::MutBorrow) => {
+                        upvar_borrow.kind = kind;
+                        paths_for_upvar.insert(path, ty::UpvarCapture::ByRef(upvar_borrow));
+                    }
+                    // Take LHS:
+                    (ty::ImmBorrow, ty::ImmBorrow)
+                    | (ty::UniqueImmBorrow, ty::ImmBorrow)
+                    | (ty::UniqueImmBorrow, ty::UniqueImmBorrow)
+                    | (ty::MutBorrow, _) => {}
+                }
+            }
+        }
+
     }
 
     fn adjust_closure_kind(
