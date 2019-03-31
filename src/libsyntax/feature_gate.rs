@@ -980,6 +980,12 @@ pub const BUILTIN_ATTRIBUTES: &[(&str, AttributeType, AttributeTemplate, Attribu
                                         is just used for rustc unit tests \
                                         and will never be stable",
                                        cfg_fn!(rustc_attrs))),
+    ("rustc_dump_closure_captures", Whitelisted, template!(Word), Gated(Stability::Unstable,
+                                       "rustc_attrs",
+                                       "this attribute \
+                                        is just used for rustc unit tests \
+                                        and will never be stable",
+                                       cfg_fn!(rustc_attrs))),
     ("rustc_if_this_changed", Whitelisted, template!(Word, List: "DepNode"),
                                                  Gated(Stability::Unstable,
                                                  "rustc_attrs",

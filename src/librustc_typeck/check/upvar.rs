@@ -32,6 +32,7 @@
 
 use super::FnCtxt;
 
+use errors::DiagnosticBuilder;
 use crate::middle::expr_use_visitor as euv;
 use crate::middle::mem_categorization as mc;
 use crate::middle::mem_categorization::Categorization;
@@ -50,6 +51,35 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
 
         // it's our job to process these.
         assert!(self.deferred_call_resolutions.borrow().is_empty());
+
+        let tcx = self.tcx;
+        let item_id = tcx.hir().body_owner(body.id());
+        let item_def_id = tcx.hir().local_def_id(item_id);
+
+        if !tcx.has_attr(item_def_id, "rustc_dump_closure_captures") {
+            return
+        }
+
+        let mut errors_buffer = Vec::new();
+        for (upvar_id, path_map) in self.tables.borrow().upvar_captures.iter() {
+            let upvar_node_id = tcx.hir().hir_to_node_id(upvar_id.var_path.hir_id);
+            let upvar = tcx.hir().node_to_string(upvar_node_id);
+            let closure_node_id = tcx.hir().local_def_id_to_node_id(upvar_id.closure_expr_id);
+            let span = tcx.hir().span(closure_node_id);
+            for (path, capture) in path_map {
+                let err = tcx.sess.struct_span_err(
+                    span,
+                    &format!("closure capture paths: Upvar {} {:?}: {:?}", upvar, path, capture)
+                );
+                err.buffer(&mut errors_buffer);
+            }
+        }
+        if !errors_buffer.is_empty() {
+            errors_buffer.sort_by_key(|diag| diag.span.primary_span());
+            for diag in errors_buffer.drain(..) {
+                DiagnosticBuilder::new_diagnostic(tcx.sess.diagnostic(), diag).emit();
+            }
+        }
     }
 }
 
