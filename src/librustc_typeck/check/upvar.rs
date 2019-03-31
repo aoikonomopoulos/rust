@@ -172,6 +172,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             current_closure_kind: ty::ClosureKind::LATTICE_BOTTOM,
             current_origin: None,
             adjust_upvar_captures: ty::UpvarCaptureMap::default(),
+            upvar_captures: ty::UpvarMap::default(),
         };
         euv::ExprUseVisitor::with_infer(
             &mut delegate,
@@ -203,6 +204,10 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             .upvar_capture_map
             .extend(delegate.adjust_upvar_captures);
 
+        self.tables
+            .borrow_mut()
+            .upvar_captures
+            .extend(delegate.upvar_captures);
         // Now that we've analyzed the closure, we know how each
         // variable is borrowed, and we know what traits the closure
         // implements (Fn vs FnMut etc). We now have some updates to do
@@ -301,6 +306,8 @@ struct InferBorrowKind<'a, 'gcx: 'a + 'tcx, 'tcx: 'a> {
     // For each upvar that we access, we track the minimal kind of
     // access we need (ref, ref mut, move, etc).
     adjust_upvar_captures: ty::UpvarCaptureMap<'tcx>,
+
+    upvar_captures: ty::UpvarMap<'tcx>,
 }
 
 impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
