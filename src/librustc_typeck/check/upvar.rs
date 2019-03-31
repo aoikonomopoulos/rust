@@ -345,6 +345,112 @@ struct InferBorrowKind<'a, 'gcx: 'a + 'tcx, 'tcx: 'a> {
 }
 
 impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
+    fn record_capture_path(&mut self, cmt: &mc::cmt_<'tcx>) {
+        match self.capture_path_by_cmt(cmt) {
+            (Some (upvar_id), path) => {
+                let paths_for_upvar = self
+                    .upvar_captures
+                    .entry(upvar_id)
+                    .or_insert_with(ty::UpvarCapturePathMap::default);
+                let fcx = self.fcx;
+                let span = self.span;
+                let capture_clause = self.capture_clause;
+                paths_for_upvar.entry(path).or_insert_with(|| {
+                    match capture_clause {
+                        hir::CaptureByValue => ty::UpvarCapture::ByValue,
+                        hir::CaptureByRef => {
+                            let origin = UpvarRegion(upvar_id, span);
+                            let freevar_region = fcx.next_region_var(origin);
+                            let upvar_borrow = ty::UpvarBorrow {
+                                kind: ty::ImmBorrow,
+                                region: freevar_region,
+                            };
+                            ty::UpvarCapture::ByRef(upvar_borrow)
+                        }
+                    }
+                });
+            }
+            _ => {}
+        }
+    }
+
+    fn capture_path_by_cmt_inner(&self, mut acc: Vec<ty::CapturePathComponent>, cmt: &mc::cmt_<'tcx>)
+                           -> (Option<ty::UpvarId>, Vec<ty::CapturePathComponent>) {
+        use crate::middle::mem_categorization as mc;
+        use crate::middle::mem_categorization::{
+            Categorization::*,
+            InteriorKind::*,
+            FieldIndex,
+        };
+        use ty::CapturePathComponent as CPC;
+        match &cmt.cat {
+            Interior(cmt, InteriorField(FieldIndex(_, name))) => {
+                debug!("capture_path_by_cmt: push Interior");
+                acc.push(CPC::Field(*name));
+                self.capture_path_by_cmt_inner(acc, &cmt)
+            },
+            Deref(cmt, _) => {
+                debug!("capture_path_by_cmt: in Deref; note {:?}", cmt.note);
+                match cmt.note {
+                    mc::NoteClosureEnv(upvar_id) |
+                    mc::NoteUpvarRef(upvar_id) => {
+                        debug!("capture_path_by_cmt: got path for {:?}", upvar_id);
+                        (Some(upvar_id), acc)
+                    }
+                    mc::NoteNone => {
+                        debug!("capture_path_by_cmt: push Vanilla Deref");
+                        acc.push(CPC::Deref);
+                        self.capture_path_by_cmt_inner(acc, &cmt)
+                    }
+                    mc::NoteIndex => {
+                        // FIXME
+                        // Say we have something like `x.y[z].w`. We've
+                        // already seen the `w` and are now at `y[z]`; We
+                        // can't really see past the indexing, so we need
+                        // to throw away both anything we've accumulated so
+                        // far and the current Deref.
+                        debug!("capture_path_by_cmt: NoteIndex, dropping {:?}", acc);
+                        self.capture_path_by_cmt_inner(vec![], &cmt)
+                    }
+                }
+            },
+            Upvar(mc::Upvar {id: upvar_id, ..}) => {
+                debug!("capture_path_by_cmt: Upvar {:?}", upvar_id);
+                (Some(*upvar_id), acc)
+            },
+            Interior(cmt, InteriorElement(..)) => {
+                // FIXME: can't look past that; flush the accumulator
+                debug!("capture_path_by_cmt: InteriorElement");
+                self.capture_path_by_cmt_inner(vec![], &cmt)
+            },
+            Rvalue(_, cmt) => {
+                debug!("capture_path_by_cmt: Rvalue {:#?}", cmt);
+                match cmt {
+                    Some (cmt) => self.capture_path_by_cmt_inner(vec![], &cmt),
+                    None => {
+                        debug!("no cmt for Rvalue"); // FIXME
+                        (None, vec![])
+                    }
+                }
+            }
+            Downcast (cmt, variant) => {
+                debug!("capture_path_by_cmt: Downcast");
+                acc.push(CPC::Downcast(*variant));
+                self.capture_path_by_cmt_inner(acc, &cmt)
+            }
+            ThreadLocal (..) | StaticItem | Local(..) => {
+                // FIXME: this cannot possibly resolve to an Upvar?
+                // But we do see them in practice
+                debug!("capture_path_by_cmt: other FIXME {:#?}", cmt.cat);
+                (None, vec![])
+            }
+        }
+    }
+    fn capture_path_by_cmt(&self, cmt: &mc::cmt_<'tcx>) -> (Option<ty::UpvarId>, ty::CapturePath) {
+        let (upvar, path) = self.capture_path_by_cmt_inner(vec![], cmt);
+        (upvar, ty::CapturePath(path.into_iter().rev().collect()))
+    }
+
     fn adjust_upvar_borrow_kind_for_consume(
         &mut self,
         cmt: &mc::cmt_<'tcx>,
@@ -400,13 +506,16 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
 
                     self.adjust_upvar_captures
                         .insert(upvar_id, ty::UpvarCapture::ByValue);
-                    let path = ty::CapturePath(vec![
-                        ty::CapturePathComponent::Interior("dummy".to_string())
-                    ]);
-                    let paths_for_upvar = self
-                        .upvar_captures.entry(upvar_id)
-                        .or_insert_with(ty::UpvarCapturePathMap::default);
-                    paths_for_upvar.insert(path, ty::UpvarCapture::ByValue);
+                    match self.capture_path_by_cmt(&cmt) {
+                        (Some(cmt_upvar_id), path) => {
+                            assert!(cmt_upvar_id == upvar_id);
+                            let paths_for_upvar = self
+                                .upvar_captures.entry(upvar_id)
+                                .or_insert_with(ty::UpvarCapturePathMap::default);
+                            paths_for_upvar.insert(path, ty::UpvarCapture::ByValue);
+                        }
+                        (None, _) => bug!("No upvar found")
+                    }
                 }
                 mc::NoteClosureEnv(upvar_id) => {
                     // we get just a closureenv ref if this is a
@@ -513,7 +622,7 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
                 // upvar, then we need to modify the
                 // borrow_kind of the upvar to make sure it
                 // is inferred to mutable if necessary
-                self.adjust_upvar_borrow_kind(upvar_id, borrow_kind);
+                self.adjust_upvar_borrow_kind(upvar_id, borrow_kind, cmt);
 
                 // also need to be in an FnMut closure since this is not an ImmBorrow
                 self.adjust_closure_kind(
@@ -547,7 +656,8 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
     /// moving from left to right as needed (but never right to left).
     /// Here the argument `mutbl` is the borrow_kind that is required by
     /// some particular use.
-    fn adjust_upvar_borrow_kind(&mut self, upvar_id: ty::UpvarId, kind: ty::BorrowKind) {
+    fn adjust_upvar_borrow_kind(&mut self, upvar_id: ty::UpvarId, kind: ty::BorrowKind,
+                                cmt: &mc::cmt_<'tcx>) {
         let upvar_capture = self
             .adjust_upvar_captures
             .get(&upvar_id)
@@ -580,29 +690,34 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
                 }
             }
         }
-        let path = ty::CapturePath(vec![
-            ty::CapturePathComponent::Interior("dummy".to_string())
-        ]);
-        let paths_for_upvar = self.
-            upvar_captures.entry(upvar_id)
-            .or_insert_with(ty::UpvarCapturePathMap::default);
-        let fcx = self.fcx;
-        let span = self.span;
-        let capture_clause = self.capture_clause;
-        let capture = paths_for_upvar.get(&path).cloned().unwrap_or_else(|| {
-            match capture_clause {
-                hir::CaptureByValue => ty::UpvarCapture::ByValue,
-                hir::CaptureByRef => {
-                    let origin = UpvarRegion(upvar_id, span);
-                    let freevar_region = fcx.next_region_var(origin);
-                    let upvar_borrow = ty::UpvarBorrow {
-                        kind: ty::ImmBorrow,
-                        region: freevar_region,
-                    };
-                    ty::UpvarCapture::ByRef(upvar_borrow)
-                }
+        let capture = match self.capture_path_by_cmt(&cmt) {
+            (Some(cmt_upvar_id), path) => {
+                assert!(cmt_upvar_id == upvar_id);
+                let paths_for_upvar = self.
+                    upvar_captures.entry(upvar_id)
+                    .or_insert_with(ty::UpvarCapturePathMap::default);
+                let fcx = self.fcx;
+                let span = self.span;
+                let capture_clause = self.capture_clause;
+                paths_for_upvar.entry(path).or_insert_with(|| {
+                    match capture_clause {
+                        hir::CaptureByValue => ty::UpvarCapture::ByValue,
+                        hir::CaptureByRef => {
+                            let origin = UpvarRegion(upvar_id, span);
+                            let freevar_region = fcx.next_region_var(origin);
+                            let upvar_borrow = ty::UpvarBorrow {
+                                kind: ty::ImmBorrow,
+                                region: freevar_region,
+                            };
+                            ty::UpvarCapture::ByRef(upvar_borrow)
+                        }
+                    }
+                })
             }
-        });
+            (None, _) => {
+                bug!("No Upvar")
+            }
+        };
         match capture {
             ty::UpvarCapture::ByValue => {
                 // Upvar is already by-value, the strongest criteria.
@@ -614,7 +729,7 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
                     | (ty::ImmBorrow, ty::MutBorrow)
                     | (ty::UniqueImmBorrow, ty::MutBorrow) => {
                         upvar_borrow.kind = kind;
-                        paths_for_upvar.insert(path, ty::UpvarCapture::ByRef(upvar_borrow));
+                        *capture = ty::UpvarCapture::ByRef(upvar_borrow);
                     }
                     // Take LHS:
                     (ty::ImmBorrow, ty::ImmBorrow)
@@ -681,6 +796,7 @@ impl<'a, 'gcx, 'tcx> euv::Delegate<'tcx> for InferBorrowKind<'a, 'gcx, 'tcx> {
         mode: euv::ConsumeMode,
     ) {
         debug!("consume(cmt={:?},mode={:?})", cmt, mode);
+        self.record_capture_path(cmt);
         self.adjust_upvar_borrow_kind_for_consume(cmt, mode);
     }
 
@@ -699,6 +815,7 @@ impl<'a, 'gcx, 'tcx> euv::Delegate<'tcx> for InferBorrowKind<'a, 'gcx, 'tcx> {
         mode: euv::ConsumeMode,
     ) {
         debug!("consume_pat(cmt={:?},mode={:?})", cmt, mode);
+        self.record_capture_path(cmt);
         self.adjust_upvar_borrow_kind_for_consume(cmt, mode);
     }
 
@@ -716,6 +833,7 @@ impl<'a, 'gcx, 'tcx> euv::Delegate<'tcx> for InferBorrowKind<'a, 'gcx, 'tcx> {
             borrow_id, cmt, bk
         );
 
+        self.record_capture_path(cmt); // FIXME: completely untested
         match bk {
             ty::ImmBorrow => {}
             ty::UniqueImmBorrow => {
@@ -738,6 +856,7 @@ impl<'a, 'gcx, 'tcx> euv::Delegate<'tcx> for InferBorrowKind<'a, 'gcx, 'tcx> {
     ) {
         debug!("mutate(assignee_cmt={:?})", assignee_cmt);
 
+        self.record_capture_path(assignee_cmt); // FIXME: completely untested
         self.adjust_upvar_borrow_kind_for_mut(assignee_cmt);
     }
 }

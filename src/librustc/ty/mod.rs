@@ -811,7 +811,9 @@ pub type UpvarCaptureMap<'tcx> = FxHashMap<UpvarId, UpvarCapture<'tcx>>;
 
 #[derive(Clone, Debug, Eq, Hash, HashStable, Ord, PartialEq, PartialOrd, RustcEncodable, RustcDecodable)]
 pub enum CapturePathComponent {
-    Interior(String),
+    Field(syntax::ast::Name),
+    Downcast(DefId),
+    Deref,
 }
 
 #[derive(Clone, Debug, Eq, Hash, HashStable, Ord, PartialEq, PartialOrd, RustcEncodable, RustcDecodable)]
