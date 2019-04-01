@@ -44,6 +44,7 @@ use rustc::infer::UpvarRegion;
 use rustc::ty::{self, Ty, TyCtxt, UpvarSubsts};
 use syntax::ast;
 use syntax_pos::Span;
+use rustc_data_structures::fx::FxHashSet;
 
 impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
     pub fn closure_analyze(&self, body: &'gcx hir::Body) {
@@ -231,6 +232,20 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                     .insert(closure_hir_id, origin);
             }
         }
+        // Ensure that we have captured /a/ path for every upvar; this
+        // is not sufficient to guarantee we haven't missed a path;
+        // but, if we've completely missed an upvar, we'll know.
+        assert!(
+            (self.tables
+            .borrow()
+            .upvar_list
+            .get(&closure_def_id)
+            .unwrap_or(&vec![])
+            .iter()
+             .collect::<FxHashSet<&ty::UpvarId>>()) ==
+                (delegate.upvar_captures
+            .keys()
+            .collect::<FxHashSet<&ty::UpvarId>>()));
 
         self.tables
             .borrow_mut()
@@ -517,10 +532,9 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
                     match self.capture_path_by_cmt(&cmt) {
                         (Some(cmt_upvar_id), path) => {
                             assert!(cmt_upvar_id == upvar_id);
-                            let paths_for_upvar = self
-                                .upvar_captures.entry(upvar_id)
-                                .or_insert_with(ty::UpvarCapturePathMap::default);
-                            paths_for_upvar.insert(path, ty::UpvarCapture::ByValue);
+                            self.upvar_captures.get_mut(&upvar_id)
+                                .unwrap()
+                                .insert(path, ty::UpvarCapture::ByValue);
                         }
                         (None, _) => bug!("No upvar found")
                     }
@@ -702,8 +716,7 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
             (Some(cmt_upvar_id), path) => {
                 assert!(cmt_upvar_id == upvar_id);
                 let paths_for_upvar = self.
-                    upvar_captures.entry(upvar_id)
-                    .or_insert_with(ty::UpvarCapturePathMap::default);
+                    upvar_captures.get_mut(&upvar_id).unwrap();
                 let fcx = self.fcx;
                 let span = self.span;
                 let capture_clause = self.capture_clause;
