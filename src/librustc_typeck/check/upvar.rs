@@ -346,9 +346,13 @@ struct InferBorrowKind<'a, 'gcx: 'a + 'tcx, 'tcx: 'a> {
 }
 
 impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
-    fn record_capture_path(&mut self, cmt: &mc::cmt_<'tcx>) {
+    // This ensures that a given (upvar, path) begins life with an
+    // appropriate UpvarCapture (which might then be strengthened).
+    fn initialize_capture_path(&mut self, cmt: &mc::cmt_<'tcx>) {
         match self.capture_path_by_cmt(cmt) {
             (Some (upvar_id), path) => {
+                // If there's no UpvarCapturePathMap for this upvar_id,
+                // create one
                 let paths_for_upvar = self
                     .upvar_captures
                     .entry(upvar_id)
@@ -356,6 +360,8 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
                 let fcx = self.fcx;
                 let span = self.span;
                 let capture_clause = self.capture_clause;
+                // If it's the first time we're observing this path for
+                // this upvar, seed it with the weakest possible state.
                 paths_for_upvar.entry(path).or_insert_with(|| {
                     match capture_clause {
                         hir::CaptureByValue => ty::UpvarCapture::ByValue,
@@ -797,7 +803,7 @@ impl<'a, 'gcx, 'tcx> euv::Delegate<'tcx> for InferBorrowKind<'a, 'gcx, 'tcx> {
         mode: euv::ConsumeMode,
     ) {
         debug!("consume(cmt={:?},mode={:?})", cmt, mode);
-        self.record_capture_path(cmt);
+        self.initialize_capture_path(cmt);
         self.adjust_upvar_borrow_kind_for_consume(cmt, mode);
     }
 
@@ -816,7 +822,7 @@ impl<'a, 'gcx, 'tcx> euv::Delegate<'tcx> for InferBorrowKind<'a, 'gcx, 'tcx> {
         mode: euv::ConsumeMode,
     ) {
         debug!("consume_pat(cmt={:?},mode={:?})", cmt, mode);
-        self.record_capture_path(cmt);
+        self.initialize_capture_path(cmt);
         self.adjust_upvar_borrow_kind_for_consume(cmt, mode);
     }
 
@@ -834,7 +840,7 @@ impl<'a, 'gcx, 'tcx> euv::Delegate<'tcx> for InferBorrowKind<'a, 'gcx, 'tcx> {
             borrow_id, cmt, bk
         );
 
-        self.record_capture_path(cmt); // FIXME: completely untested
+        self.initialize_capture_path(cmt); // FIXME: completely untested
         match bk {
             ty::ImmBorrow => {}
             ty::UniqueImmBorrow => {
@@ -857,7 +863,7 @@ impl<'a, 'gcx, 'tcx> euv::Delegate<'tcx> for InferBorrowKind<'a, 'gcx, 'tcx> {
     ) {
         debug!("mutate(assignee_cmt={:?})", assignee_cmt);
 
-        self.record_capture_path(assignee_cmt); // FIXME: completely untested
+        self.initialize_capture_path(assignee_cmt); // FIXME: completely untested
         self.adjust_upvar_borrow_kind_for_mut(assignee_cmt);
     }
 }
