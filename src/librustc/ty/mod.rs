@@ -795,6 +795,22 @@ pub enum UpvarCapture<'tcx> {
     ByRef(UpvarBorrow<'tcx>),
 }
 
+impl fmt::Display for UpvarCapture<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            UpvarCapture::ByValue => write!(f, "ByValue"),
+            UpvarCapture::ByRef(UpvarBorrow {kind: bk, ..}) => {
+                let bk = match bk {
+                    ImmBorrow => "immutable",
+                    UniqueImmBorrow => "unique immutable",
+                    MutBorrow => "mutable",
+                };
+                write!(f, "ByRef {}", bk)
+            }
+        }
+    }
+}
+
 #[derive(PartialEq, Clone, Copy, RustcEncodable, RustcDecodable, HashStable)]
 pub struct UpvarBorrow<'tcx> {
     /// The kind of borrow: by-ref upvars have access to shared

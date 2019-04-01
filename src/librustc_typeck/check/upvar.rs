@@ -71,7 +71,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                     span,
                     "closure capture path"
                 );
-                err.note(&format!("Upvar {} {:?}: {:?}", upvar, path, capture));
+                err.note(&format!("Upvar {} {:?}: {}", upvar, path, capture));
                 err.buffer(&mut errors_buffer);
             }
         }
