@@ -67,10 +67,11 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             let closure_node_id = tcx.hir().local_def_id_to_node_id(upvar_id.closure_expr_id);
             let span = tcx.hir().span(closure_node_id);
             for (path, capture) in path_map {
-                let err = tcx.sess.struct_span_err(
+                let mut err = tcx.sess.diagnostic().span_note_diag(
                     span,
-                    &format!("closure capture paths: Upvar {} {:?}: {:?}", upvar, path, capture)
+                    "closure capture path"
                 );
+                err.note(&format!("Upvar {} {:?}: {:?}", upvar, path, capture));
                 err.buffer(&mut errors_buffer);
             }
         }
