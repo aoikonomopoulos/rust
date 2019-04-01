@@ -381,8 +381,9 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
         }
     }
 
-    fn capture_path_by_cmt_inner(&self, mut acc: Vec<ty::CapturePathComponent>, cmt: &mc::cmt_<'tcx>)
-                           -> (Option<ty::UpvarId>, Vec<ty::CapturePathComponent>) {
+    fn capture_path_by_cmt_inner(&self, mut acc: Vec<ty::CapturePathComponent>,
+                                 cmt: &mc::cmt_<'tcx>)
+                                 -> (Option<ty::UpvarId>, Vec<ty::CapturePathComponent>) {
         use crate::middle::mem_categorization as mc;
         use crate::middle::mem_categorization::{
             Categorization::*,
