@@ -825,14 +825,16 @@ pub struct UpvarBorrow<'tcx> {
 pub type UpvarListMap = FxHashMap<DefId, Vec<UpvarId>>;
 pub type UpvarCaptureMap<'tcx> = FxHashMap<UpvarId, UpvarCapture<'tcx>>;
 
-#[derive(Clone, Debug, Eq, Hash, HashStable, Ord, PartialEq, PartialOrd, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Debug, Eq, Hash, HashStable, Ord, PartialEq, PartialOrd,
+         RustcEncodable, RustcDecodable)]
 pub enum CapturePathComponent {
     Field(syntax::ast::Name),
     Downcast(DefId),
     Deref,
 }
 
-#[derive(Clone, Debug, Eq, Hash, HashStable, Ord, PartialEq, PartialOrd, RustcEncodable, RustcDecodable)]
+#[derive(Clone, Debug, Eq, Hash, HashStable, Ord, PartialEq, PartialOrd,
+         RustcEncodable, RustcDecodable)]
 pub struct CapturePath(pub Vec<CapturePathComponent>);
 pub type UpvarCapturePathMap<'tcx> = FxHashMap<CapturePath, UpvarCapture<'tcx>>;
 pub type UpvarMap<'tcx> = FxHashMap<UpvarId, UpvarCapturePathMap<'tcx>>;
