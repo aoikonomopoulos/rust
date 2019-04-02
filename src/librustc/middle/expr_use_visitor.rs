@@ -234,6 +234,7 @@ pub struct ExprUseVisitor<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
     mc: mc::MemCategorizationContext<'a, 'gcx, 'tcx>,
     delegate: &'a mut dyn Delegate<'tcx>,
     param_env: ty::ParamEnv<'tcx>,
+    parts_omitted: bool,
 }
 
 // If the MC results in an error, it's because the type check
@@ -244,11 +245,12 @@ pub struct ExprUseVisitor<'a, 'gcx: 'a+'tcx, 'tcx: 'a> {
 // Note that this macro appears similar to try!(), but, unlike try!(),
 // it does not propagate the error.
 macro_rules! return_if_err {
-    ($inp: expr) => (
+    ($self: ident, $inp: expr) => (
         match $inp {
             Ok(v) => v,
             Err(()) => {
                 debug!("mc reported err");
+                ($self).parts_omitted = true;
                 return
             }
         }
@@ -282,11 +284,16 @@ impl<'a, 'tcx> ExprUseVisitor<'a, 'tcx, 'tcx> {
                                                   rvalue_promotable_map),
             delegate,
             param_env,
+            parts_omitted: false,
         }
     }
 }
 
 impl<'a, 'gcx, 'tcx> ExprUseVisitor<'a, 'gcx, 'tcx> {
+    pub fn parts_omitted(&self) -> bool {
+        self.parts_omitted
+    }
+
     pub fn with_infer(delegate: &'a mut (dyn Delegate<'tcx>+'a),
                       infcx: &'a InferCtxt<'a, 'gcx, 'tcx>,
                       param_env: ty::ParamEnv<'tcx>,
@@ -298,6 +305,7 @@ impl<'a, 'gcx, 'tcx> ExprUseVisitor<'a, 'gcx, 'tcx> {
             mc: mc::MemCategorizationContext::with_infer(infcx, region_scope_tree, tables),
             delegate,
             param_env,
+            parts_omitted: false,
         }
     }
 
@@ -305,7 +313,7 @@ impl<'a, 'gcx, 'tcx> ExprUseVisitor<'a, 'gcx, 'tcx> {
         debug!("consume_body(body={:?})", body);
 
         for arg in &body.arguments {
-            let arg_ty = return_if_err!(self.mc.pat_ty_adjusted(&arg.pat));
+            let arg_ty = return_if_err!(self, self.mc.pat_ty_adjusted(&arg.pat));
             debug!("consume_body: arg_ty = {:?}", arg_ty);
 
             let fn_body_scope_r =
@@ -351,7 +359,7 @@ impl<'a, 'gcx, 'tcx> ExprUseVisitor<'a, 'gcx, 'tcx> {
     pub fn consume_expr(&mut self, expr: &hir::Expr) {
         debug!("consume_expr(expr={:?})", expr);
 
-        let cmt = return_if_err!(self.mc.cat_expr(expr));
+        let cmt = return_if_err!(self, self.mc.cat_expr(expr));
         self.delegate_consume(expr.hir_id, expr.span, &cmt);
         self.walk_expr(expr);
     }
@@ -361,7 +369,7 @@ impl<'a, 'gcx, 'tcx> ExprUseVisitor<'a, 'gcx, 'tcx> {
                    assignment_expr: &hir::Expr,
                    expr: &hir::Expr,
                    mode: MutateMode) {
-        let cmt = return_if_err!(self.mc.cat_expr(expr));
+        let cmt = return_if_err!(self, self.mc.cat_expr(expr));
         self.delegate.mutate(assignment_expr.hir_id, span, &cmt, mode);
         self.walk_expr(expr);
     }
@@ -374,7 +382,7 @@ impl<'a, 'gcx, 'tcx> ExprUseVisitor<'a, 'gcx, 'tcx> {
         debug!("borrow_expr(expr={:?}, r={:?}, bk={:?})",
                expr, r, bk);
 
-        let cmt = return_if_err!(self.mc.cat_expr(expr));
+        let cmt = return_if_err!(self, self.mc.cat_expr(expr));
         self.delegate.borrow(expr.hir_id, expr.span, &cmt, r, bk, cause);
 
         self.walk_expr(expr)
@@ -435,7 +443,7 @@ impl<'a, 'gcx, 'tcx> ExprUseVisitor<'a, 'gcx, 'tcx> {
             }
 
             hir::ExprKind::Match(ref discr, ref arms, _) => {
-                let discr_cmt = Rc::new(return_if_err!(self.mc.cat_expr(&discr)));
+                let discr_cmt = Rc::new(return_if_err!(self, self.mc.cat_expr(&discr)));
                 let r = self.tcx().types.re_empty;
                 self.borrow_expr(&discr, r, ty::ImmBorrow, MatchDiscriminant);
 
@@ -454,7 +462,7 @@ impl<'a, 'gcx, 'tcx> ExprUseVisitor<'a, 'gcx, 'tcx> {
             hir::ExprKind::AddrOf(m, ref base) => {   // &base
                 // make sure that the thing we are pointing out stays valid
                 // for the lifetime `scope_r` of the resulting ptr:
-                let expr_ty = return_if_err!(self.mc.expr_ty(expr));
+                let expr_ty = return_if_err!(self, self.mc.expr_ty(expr));
                 if let ty::Ref(r, _, _) = expr_ty.sty {
                     let bk = ty::BorrowKind::from_mutbl(m);
                     self.borrow_expr(&base, r, bk, AddrOf);
@@ -551,7 +559,7 @@ impl<'a, 'gcx, 'tcx> ExprUseVisitor<'a, 'gcx, 'tcx> {
     }
 
     fn walk_callee(&mut self, call: &hir::Expr, callee: &hir::Expr) {
-        let callee_ty = return_if_err!(self.mc.expr_ty_adjusted(callee));
+        let callee_ty = return_if_err!(self, self.mc.expr_ty_adjusted(callee));
         debug!("walk_callee: callee={:?} callee_ty={:?}",
                callee, callee_ty);
         match callee_ty.sty {
@@ -623,7 +631,7 @@ impl<'a, 'gcx, 'tcx> ExprUseVisitor<'a, 'gcx, 'tcx> {
                 // "assigns", which is handled by
                 // `walk_pat`:
                 self.walk_expr(&expr);
-                let init_cmt = Rc::new(return_if_err!(self.mc.cat_expr(&expr)));
+                let init_cmt = Rc::new(return_if_err!(self, self.mc.cat_expr(&expr)));
                 self.walk_irrefutable_pat(init_cmt, &local.pat);
             }
         }
@@ -656,7 +664,7 @@ impl<'a, 'gcx, 'tcx> ExprUseVisitor<'a, 'gcx, 'tcx> {
             None => { return; }
         };
 
-        let with_cmt = Rc::new(return_if_err!(self.mc.cat_expr(&with_expr)));
+        let with_cmt = Rc::new(return_if_err!(self, self.mc.cat_expr(&with_expr)));
 
         // Select just those fields of the `with`
         // expression that will actually be used
@@ -702,7 +710,7 @@ impl<'a, 'gcx, 'tcx> ExprUseVisitor<'a, 'gcx, 'tcx> {
     // process.
     fn walk_adjustment(&mut self, expr: &hir::Expr) {
         let adjustments = self.mc.tables.expr_adjustments(expr);
-        let mut cmt = return_if_err!(self.mc.cat_expr_unadjusted(expr));
+        let mut cmt = return_if_err!(self, self.mc.cat_expr_unadjusted(expr));
         for adjustment in adjustments {
             debug!("walk_adjustment expr={:?} adj={:?}", expr, adjustment);
             match adjustment.kind {
@@ -733,7 +741,7 @@ impl<'a, 'gcx, 'tcx> ExprUseVisitor<'a, 'gcx, 'tcx> {
                     self.walk_autoref(expr, &cmt, autoref);
                 }
             }
-            cmt = return_if_err!(self.mc.cat_expr_adjusted(expr, cmt, &adjustment));
+            cmt = return_if_err!(self, self.mc.cat_expr_adjusted(expr, cmt, &adjustment));
         }
     }
 
@@ -821,7 +829,7 @@ impl<'a, 'gcx, 'tcx> ExprUseVisitor<'a, 'gcx, 'tcx> {
                                mode: &mut TrackMatchMode) {
         debug!("determine_pat_move_mode cmt_discr={:?} pat={:?}", cmt_discr, pat);
 
-        return_if_err!(self.mc.cat_pattern(cmt_discr, pat, |cmt_pat, pat| {
+        return_if_err!(self, self.mc.cat_pattern(cmt_discr, pat, |cmt_pat, pat| {
             if let PatKind::Binding(..) = pat.node {
                 let bm = *self.mc.tables.pat_binding_modes()
                                         .get(pat.hir_id)
@@ -847,8 +855,9 @@ impl<'a, 'gcx, 'tcx> ExprUseVisitor<'a, 'gcx, 'tcx> {
         debug!("walk_pat(cmt_discr={:?}, pat={:?})", cmt_discr, pat);
 
         let tcx = self.tcx();
-        let ExprUseVisitor { ref mc, ref mut delegate, param_env } = *self;
-        return_if_err!(mc.cat_pattern(cmt_discr.clone(), pat, |cmt_pat, pat| {
+        let ExprUseVisitor { ref mc, ref mut delegate, param_env, .. } = *self;
+        let parts_omitted = &mut self.parts_omitted;
+        return_if_err!(self, mc.cat_pattern(cmt_discr.clone(), pat, |cmt_pat, pat| {
             if let PatKind::Binding(_, canonical_id, ..) = pat.node {
                 debug!(
                     "walk_pat: binding cmt_pat={:?} pat={:?} match_mode={:?}",
@@ -860,7 +869,16 @@ impl<'a, 'gcx, 'tcx> ExprUseVisitor<'a, 'gcx, 'tcx> {
                     debug!("walk_pat: pat.hir_id={:?} bm={:?}", pat.hir_id, bm);
 
                     // pat_ty: the type of the binding being produced.
-                    let pat_ty = return_if_err!(mc.node_ty(pat.hir_id));
+                    let pat_ty = match mc.node_ty(pat.hir_id) {
+                        Ok (ty) => ty,
+                        Err (_) => {
+                            // FIXME: this open-codes return_if_err, in
+                            // anticipation of RFC2229
+                            debug!("mc reported err");
+                            *parts_omitted = true;
+                            return
+                        },
+                    };
                     debug!("walk_pat: pat_ty={:?}", pat_ty);
 
                     // Each match binding is effectively an assignment to the
@@ -894,7 +912,7 @@ impl<'a, 'gcx, 'tcx> ExprUseVisitor<'a, 'gcx, 'tcx> {
         // the interior nodes (enum variants and structs), as opposed
         // to the above loop's visit of than the bindings that form
         // the leaves of the pattern tree structure.
-        return_if_err!(mc.cat_pattern(cmt_discr, pat, |cmt_pat, pat| {
+        return_if_err!(self, mc.cat_pattern(cmt_discr, pat, |cmt_pat, pat| {
             let qpath = match pat.node {
                 PatKind::Path(ref qpath) |
                 PatKind::TupleStruct(ref qpath, ..) |
@@ -932,7 +950,7 @@ impl<'a, 'gcx, 'tcx> ExprUseVisitor<'a, 'gcx, 'tcx> {
                     closure_expr_id: closure_def_id.to_local(),
                 };
                 let upvar_capture = self.mc.tables.upvar_capture(upvar_id);
-                let cmt_var = return_if_err!(self.cat_captured_var(closure_expr.hir_id,
+                let cmt_var = return_if_err!(self, self.cat_captured_var(closure_expr.hir_id,
                                                                    fn_decl_span,
                                                                    freevar));
                 match upvar_capture {
