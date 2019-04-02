@@ -208,14 +208,18 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
             capture_clause: capture_clause,
             upvar_captures: ty::UpvarMap::default(),
         };
-        euv::ExprUseVisitor::with_infer(
-            &mut delegate,
-            &self.infcx,
-            self.param_env,
-            region_scope_tree,
-            &self.tables.borrow(),
-        )
-        .consume_body(body);
+        let parts_omitted = {
+            let tables = self.tables.borrow();
+            let mut euv = euv::ExprUseVisitor::with_infer(
+                &mut delegate,
+                &self.infcx,
+                self.param_env,
+                region_scope_tree,
+                &tables,
+            );
+            euv.consume_body(body);
+            euv.parts_omitted()
+        };
 
         if let Some(closure_substs) = infer_kind {
             // Unify the (as yet unbound) type variable in the closure
@@ -235,17 +239,26 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         // Ensure that we have captured /a/ path for every upvar; this
         // is not sufficient to guarantee we haven't missed a path;
         // but, if we've completely missed an upvar, we'll know.
-        assert!(
+        if !parts_omitted &&
             (self.tables
-            .borrow()
-            .upvar_list
-            .get(&closure_def_id)
-            .unwrap_or(&vec![])
-            .iter()
-             .collect::<FxHashSet<&ty::UpvarId>>()) ==
-                (delegate.upvar_captures
-            .keys()
-            .collect::<FxHashSet<&ty::UpvarId>>()));
+             .borrow()
+             .upvar_list
+             .get(&closure_def_id)
+             .unwrap_or(&vec![])
+             .iter()
+             .collect::<FxHashSet<&ty::UpvarId>>())
+            !=
+            (delegate.upvar_captures
+             .keys()
+             .collect::<FxHashSet<&ty::UpvarId>>()) {
+                bug!("keys differ: {:#?} vs {:#?}",
+                     self.tables
+                     .borrow()
+                     .upvar_list
+                     .get(&closure_def_id)
+                     .unwrap_or(&vec![]),
+                     delegate.upvar_captures);
+            }
 
         self.tables
             .borrow_mut()
