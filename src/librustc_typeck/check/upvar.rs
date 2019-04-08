@@ -240,24 +240,35 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         // is not sufficient to guarantee we haven't missed a path;
         // but, if we've completely missed an upvar, we'll know.
         if !parts_omitted &&
-            (self.tables
-             .borrow()
-             .upvar_list
-             .get(&closure_def_id)
-             .unwrap_or(&vec![])
-             .iter()
-             .collect::<FxHashSet<&ty::UpvarId>>())
-            !=
-            (delegate.upvar_captures
-             .keys()
-             .collect::<FxHashSet<&ty::UpvarId>>()) {
-                bug!("keys differ: {:#?} vs {:#?}",
-                     self.tables
-                     .borrow()
-                     .upvar_list
-                     .get(&closure_def_id)
-                     .unwrap_or(&vec![]),
-                     delegate.upvar_captures);
+            !(self.tables
+              .borrow()
+              .upvar_list
+              .get(&closure_def_id)
+              .unwrap_or(&vec![])
+              .iter()
+              .map(|upvar_id| upvar_id.var_path)
+              .collect::<FxHashSet<ty::UpvarPath>>()).is_superset(
+                &delegate.upvar_captures
+                    .keys()
+                    .map(|upvar_id| upvar_id.var_path)
+                    .collect::<FxHashSet<ty::UpvarPath>>()) {
+                let empty = vec![];
+                let tables = self.tables.borrow();
+                let keys1: FxHashSet<ty::UpvarPath> = tables
+                    .upvar_list
+                    .get(&closure_def_id)
+                    .unwrap_or(&empty)
+                    .iter()
+                    .map(|upvar_id| upvar_id.var_path)
+                    .collect();
+                let keys2: FxHashSet<ty::UpvarPath> = delegate.upvar_captures
+                    .keys()
+                    .map(|upvar_id| upvar_id.var_path)
+                    .collect();
+                bug!("{:#?} is not a superset of {:#?}",
+                     keys1,
+                     keys2,
+                );
             }
 
         self.tables
