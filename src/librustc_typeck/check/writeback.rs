@@ -319,7 +319,7 @@ impl<'cx, 'gcx, 'tcx> WritebackCx<'cx, 'gcx, 'tcx> {
             );
             self.tables
                 .upvar_capture_map
-                .insert(*upvar_id, new_upvar_capture);
+                .insert(upvar_id.clone(), new_upvar_capture);
         }
     }
 

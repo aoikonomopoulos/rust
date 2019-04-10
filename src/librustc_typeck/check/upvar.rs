@@ -165,12 +165,12 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                 debug!("seed upvar_id {:?}", upvar_id);
                 // Adding the upvar Id to the list of Upvars, which will be added
                 // to the map for the closure at the end of the for loop.
-                freevar_list.push(upvar_id);
+                freevar_list.push(upvar_id.clone());
 
                 let capture_kind = match capture_clause {
                     hir::CaptureByValue => ty::UpvarCapture::ByValue,
                     hir::CaptureByRef => {
-                        let origin = UpvarRegion(upvar_id, span);
+                        let origin = UpvarRegion(upvar_id.clone(), span);
                         let freevar_region = self.next_region_var(origin);
                         let upvar_borrow = ty::UpvarBorrow {
                             kind: ty::ImmBorrow,
@@ -334,7 +334,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                         var_path: ty::UpvarPath { hir_id: var_hir_id },
                         closure_expr_id: LocalDefId::from_def_id(closure_def_index),
                     };
-                    let capture = self.tables.borrow().upvar_capture(upvar_id);
+                    let capture = self.tables.borrow().upvar_capture(&upvar_id);
 
                     debug!(
                         "var_id={:?} freevar_ty={:?} capture={:?}",
@@ -394,7 +394,7 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
                 // create one
                 let paths_for_upvar = self
                     .upvar_captures
-                    .entry(upvar_id)
+                    .entry(upvar_id.clone())
                     .or_insert_with(ty::UpvarCapturePathMap::default);
                 let fcx = self.fcx;
                 let span = self.span;
@@ -438,11 +438,11 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
             },
             Deref(cmt, _) => {
                 debug!("capture_path_by_cmt: in Deref; note {:?}", cmt.note);
-                match cmt.note {
+                match &cmt.note {
                     mc::NoteClosureEnv(upvar_id) |
                     mc::NoteUpvarRef(upvar_id) => {
                         debug!("capture_path_by_cmt: got path for {:?}", upvar_id);
-                        (Some(upvar_id), acc)
+                        (Some(upvar_id.clone()), acc)
                     }
                     mc::NoteNone => {
                         debug!("capture_path_by_cmt: push Vanilla Deref");
@@ -463,7 +463,7 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
             },
             Upvar(mc::Upvar {id: upvar_id, ..}) => {
                 debug!("capture_path_by_cmt: Upvar {:?}", upvar_id);
-                (Some(*upvar_id), acc)
+                (Some(upvar_id.clone()), acc)
             },
             Interior(cmt, InteriorElement(..)) => {
                 // FIXME: can't look past that; flush the accumulator
@@ -552,7 +552,7 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
                     );
 
                     self.adjust_upvar_captures
-                        .insert(upvar_id, ty::UpvarCapture::ByValue);
+                        .insert(upvar_id.clone(), ty::UpvarCapture::ByValue);
                     match self.capture_path_by_cmt(&cmt) {
                         (Some(cmt_upvar_id), path) => {
                             assert!(cmt_upvar_id == upvar_id);
@@ -662,7 +662,7 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
 
         let tcx = self.fcx.tcx;
 
-        match cmt.note {
+        match &cmt.note {
             mc::NoteUpvarRef(upvar_id) => {
                 // if this is an implicit deref of an
                 // upvar, then we need to modify the
@@ -702,11 +702,11 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
     /// moving from left to right as needed (but never right to left).
     /// Here the argument `mutbl` is the borrow_kind that is required by
     /// some particular use.
-    fn adjust_upvar_borrow_kind(&mut self, upvar_id: ty::UpvarId, kind: ty::BorrowKind,
+    fn adjust_upvar_borrow_kind(&mut self, upvar_id: &ty::UpvarId, kind: ty::BorrowKind,
                                 cmt: &mc::cmt_<'tcx>) {
         let upvar_capture = self
             .adjust_upvar_captures
-            .get(&upvar_id)
+            .get(upvar_id)
             .cloned()
             .unwrap_or_else(|| self.fcx.tables.borrow().upvar_capture(upvar_id));
         debug!(
@@ -726,7 +726,7 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
                     | (ty::UniqueImmBorrow, ty::MutBorrow) => {
                         upvar_borrow.kind = kind;
                         self.adjust_upvar_captures
-                            .insert(upvar_id, ty::UpvarCapture::ByRef(upvar_borrow));
+                            .insert(upvar_id.clone(), ty::UpvarCapture::ByRef(upvar_borrow));
                     }
                     // Take LHS:
                     (ty::ImmBorrow, ty::ImmBorrow)
@@ -738,7 +738,7 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
         }
         let capture = match self.capture_path_by_cmt(&cmt) {
             (Some(cmt_upvar_id), path) => {
-                assert!(cmt_upvar_id == upvar_id);
+                assert!(cmt_upvar_id == *upvar_id);
                 let paths_for_upvar = self.
                     upvar_captures.get_mut(&upvar_id).unwrap();
                 let fcx = self.fcx;
@@ -748,7 +748,7 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
                     match capture_clause {
                         hir::CaptureByValue => ty::UpvarCapture::ByValue,
                         hir::CaptureByRef => {
-                            let origin = UpvarRegion(upvar_id, span);
+                            let origin = UpvarRegion(upvar_id.clone(), span);
                             let freevar_region = fcx.next_region_var(origin);
                             let upvar_borrow = ty::UpvarBorrow {
                                 kind: ty::ImmBorrow,

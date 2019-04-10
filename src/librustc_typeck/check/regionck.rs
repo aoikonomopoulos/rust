@@ -1207,7 +1207,7 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
                         ref_cmt,
                         ref_region,
                         ref_kind,
-                        borrow_cmt.note,
+                        borrow_cmt.note.clone(),
                     ) {
                         Some((c, k)) => {
                             borrow_cmt_cat = c.cat.clone();
@@ -1306,7 +1306,7 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
                         // by the above adjustment, so update our local variable.
                         ref_kind = upvar_borrow.kind;
 
-                        infer::ReborrowUpvar(span, *upvar_id)
+                        infer::ReborrowUpvar(span, upvar_id.clone())
                     }
                     _ => {
                         span_bug!(span, "Illegal upvar id: {:?}", upvar_id);
@@ -1317,7 +1317,7 @@ impl<'a, 'gcx, 'tcx> RegionCtxt<'a, 'gcx, 'tcx> {
                 // We don't have any mutability changes to propagate, but
                 // we do want to note that an upvar reborrow caused this
                 // link
-                infer::ReborrowUpvar(span, *upvar_id)
+                infer::ReborrowUpvar(span, upvar_id.clone())
             }
             _ => infer::Reborrow(span),
         };

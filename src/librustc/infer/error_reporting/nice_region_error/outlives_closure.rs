@@ -37,7 +37,7 @@ impl<'a, 'gcx, 'tcx> NiceRegionError<'a, 'gcx, 'tcx> {
     /// ```
     pub(super) fn try_report_outlives_closure(&self) -> Option<ErrorReported> {
         if let Some(SubSupConflict(_,
-                                   origin,
+                                   ref origin,
                                    ref sub_origin,
                                    _,
                                    ref sup_origin,

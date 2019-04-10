@@ -359,7 +359,7 @@ pub enum LateBoundRegionConversionTime {
 /// Reasons to create a region inference variable
 ///
 /// See `error_reporting` module for more details
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub enum RegionVariableOrigin {
     // Region variables created for ill-categorized reasons,
     // mostly indicates places in need of refactoring
@@ -1023,7 +1023,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
         universe: ty::UniverseIndex,
     ) -> ty::Region<'tcx> {
         let region_var = self.borrow_region_constraints()
-            .new_region_var(universe, origin);
+            .new_region_var(universe, &origin);
         self.tcx.mk_region(ty::ReVar(region_var))
     }
 

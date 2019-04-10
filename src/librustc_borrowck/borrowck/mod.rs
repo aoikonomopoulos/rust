@@ -415,7 +415,7 @@ fn closure_to_block(closure_id: LocalDefId,
 
 impl<'a, 'tcx> LoanPath<'tcx> {
     pub fn kill_scope(&self, bccx: &BorrowckCtxt<'a, 'tcx>) -> region::Scope {
-        match self.kind {
+        match &self.kind {
             LpVar(hir_id) => {
                 bccx.region_scope_tree.var_scope(hir_id.local_id)
             }
@@ -480,9 +480,9 @@ impl<'a, 'tcx> LoanPath<'tcx> {
                     None
                 }
             }
-            (&LpUpvar(id), &LpUpvar(id2)) => {
+            (&LpUpvar(ref id), &LpUpvar(ref id2)) => {
                 if id == id2 {
-                    Some(LoanPath { kind: LpUpvar(id), ty: self.ty })
+                    Some(LoanPath { kind: LpUpvar(id.clone()), ty: self.ty })
                 } else {
                     None
                 }
@@ -497,7 +497,7 @@ impl<'a, 'tcx> LoanPath<'tcx> {
 pub fn opt_loan_path_is_field<'tcx>(cmt: &mc::cmt_<'tcx>) -> (Option<Rc<LoanPath<'tcx>>>, bool) {
     let new_lp = |v: LoanPathKind<'tcx>| Rc::new(LoanPath::new(v, cmt.ty));
 
-    match cmt.cat {
+    match &cmt.cat {
         Categorization::Rvalue(..) |
         Categorization::ThreadLocal(..) |
         Categorization::StaticItem => {
@@ -505,17 +505,17 @@ pub fn opt_loan_path_is_field<'tcx>(cmt: &mc::cmt_<'tcx>) -> (Option<Rc<LoanPath
         }
 
         Categorization::Local(id) => {
-            (Some(new_lp(LpVar(id))), false)
+            (Some(new_lp(LpVar(id.clone()))), false)
         }
 
-        Categorization::Upvar(mc::Upvar { id, .. }) => {
-            (Some(new_lp(LpUpvar(id))), false)
+        Categorization::Upvar(mc::Upvar { ref id, .. }) => {
+            (Some(new_lp(LpUpvar(id.clone()))), false)
         }
 
         Categorization::Deref(ref cmt_base, pk) => {
             let lp = opt_loan_path_is_field(cmt_base);
             (lp.0.map(|lp| {
-                new_lp(LpExtend(lp, cmt.mutbl, LpDeref(pk)))
+                new_lp(LpExtend(lp, cmt.mutbl, LpDeref(*pk)))
             }), lp.1)
         }
 
@@ -532,7 +532,7 @@ pub fn opt_loan_path_is_field<'tcx>(cmt: &mc::cmt_<'tcx>) -> (Option<Rc<LoanPath
         Categorization::Downcast(ref cmt_base, variant_def_id) => {
             let lp = opt_loan_path_is_field(cmt_base);
             (lp.0.map(|lp| {
-                new_lp(LpDowncast(lp, variant_def_id))
+                new_lp(LpDowncast(lp, *variant_def_id))
             }), lp.1)
         }
     }
@@ -823,7 +823,7 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
                 let mut db = match err.cause {
                     MutabilityViolation => {
                         let mut db = self.cannot_assign(error_span, &descr, Origin::Ast);
-                        if let mc::NoteClosureEnv(upvar_id) = err.cmt.note {
+                        if let mc::NoteClosureEnv(ref upvar_id) = err.cmt.note {
                             let hir_id = upvar_id.var_path.hir_id;
                             let sp = self.tcx.hir().span_by_hir_id(hir_id);
                             let fn_closure_msg = "`Fn` closures cannot capture their enclosing \
@@ -1348,8 +1348,8 @@ impl<'a, 'tcx> BorrowckCtxt<'a, 'tcx> {
 
     fn note_and_explain_mutbl_error(&self, db: &mut DiagnosticBuilder<'_>, err: &BckError<'a, 'tcx>,
                                     error_span: &Span) {
-        match err.cmt.note {
-            mc::NoteClosureEnv(upvar_id) | mc::NoteUpvarRef(upvar_id) => {
+        match &err.cmt.note {
+            mc::NoteClosureEnv(ref upvar_id) | mc::NoteUpvarRef(ref upvar_id) => {
                 // If this is an `Fn` closure, it simply can't mutate upvars.
                 // If it's an `FnMut` closure, the original variable was declared immutable.
                 // We need to determine which is the case here.

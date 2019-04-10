@@ -87,7 +87,7 @@ fn report_move_errors<'a, 'tcx>(bccx: &BorrowckCtxt<'a, 'tcx>, errors: &[MoveErr
                 }
             }
         }
-        if let NoteClosureEnv(upvar_id) = error.move_from.note {
+        if let NoteClosureEnv(ref upvar_id) = error.move_from.note {
             err.span_label(bccx.tcx.hir().span_by_hir_id(upvar_id.var_path.hir_id),
                            "captured outer variable");
         }

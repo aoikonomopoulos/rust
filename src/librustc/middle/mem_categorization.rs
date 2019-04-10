@@ -97,7 +97,7 @@ pub enum Categorization<'tcx> {
 }
 
 // Represents any kind of upvar
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Upvar {
     pub id: ty::UpvarId,
     pub kind: ty::ClosureKind
@@ -159,7 +159,7 @@ pub enum MutabilityCategory {
 // Upvar categorization can generate a variable number of nested
 // derefs.  The note allows detecting them without deep pattern
 // matching on the categorization.
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum Note {
     NoteClosureEnv(ty::UpvarId), // Deref through closure env
     NoteUpvarRef(ty::UpvarId),   // Deref through by-ref upvar
@@ -229,9 +229,9 @@ impl<'tcx> cmt_<'tcx> {
         match self.cat {
             Categorization::Deref(ref base_cmt, BorrowedPtr(ty::ImmBorrow, _)) => {
                 // try to figure out where the immutable reference came from
-                match base_cmt.cat {
+                match &base_cmt.cat {
                     Categorization::Local(hir_id) =>
-                        Some(ImmutabilityBlame::LocalDeref(hir_id)),
+                        Some(ImmutabilityBlame::LocalDeref(*hir_id)),
                     Categorization::Interior(ref base_cmt, InteriorField(field_index)) => {
                         base_cmt.resolve_field(field_index.0).map(|(adt_def, field_def)| {
                             ImmutabilityBlame::AdtFieldDeref(adt_def, field_def)
@@ -827,7 +827,7 @@ impl<'a, 'gcx, 'tcx> MemCategorizationContext<'a, 'gcx, 'tcx> {
         let cmt_result = cmt_ {
             hir_id,
             span,
-            cat: Categorization::Upvar(Upvar {id: upvar_id, kind: kind}),
+            cat: Categorization::Upvar(Upvar {id: upvar_id.clone(), kind: kind}),
             mutbl: var_mutbl,
             ty: var_ty,
             note: NoteNone
@@ -841,17 +841,17 @@ impl<'a, 'gcx, 'tcx> MemCategorizationContext<'a, 'gcx, 'tcx> {
                 cmt_result
             }
             ty::ClosureKind::FnMut => {
-                self.env_deref(hir_id, span, upvar_id, var_mutbl, ty::MutBorrow, cmt_result)
+                self.env_deref(hir_id, span, &upvar_id, var_mutbl, ty::MutBorrow, cmt_result)
             }
             ty::ClosureKind::Fn => {
-                self.env_deref(hir_id, span, upvar_id, var_mutbl, ty::ImmBorrow, cmt_result)
+                self.env_deref(hir_id, span, &upvar_id, var_mutbl, ty::ImmBorrow, cmt_result)
             }
         };
 
         // If this is a by-ref capture, then the upvar we loaded is
         // actually a reference, so we have to add an implicit deref
         // for that.
-        let upvar_capture = self.tables.upvar_capture(upvar_id);
+        let upvar_capture = self.tables.upvar_capture(&upvar_id);
         let cmt_result = match upvar_capture {
             ty::UpvarCapture::ByValue => {
                 cmt_result
@@ -877,7 +877,7 @@ impl<'a, 'gcx, 'tcx> MemCategorizationContext<'a, 'gcx, 'tcx> {
     fn env_deref(&self,
                  hir_id: hir::HirId,
                  span: Span,
-                 upvar_id: ty::UpvarId,
+                 upvar_id: &ty::UpvarId,
                  upvar_mutbl: MutabilityCategory,
                  env_borrow_kind: ty::BorrowKind,
                  cmt_result: cmt_<'tcx>)
@@ -924,7 +924,7 @@ impl<'a, 'gcx, 'tcx> MemCategorizationContext<'a, 'gcx, 'tcx> {
             cat: Categorization::Deref(Rc::new(cmt_result), env_ptr),
             mutbl: deref_mutbl,
             ty: var_ty,
-            note: NoteClosureEnv(upvar_id)
+            note: NoteClosureEnv(upvar_id.clone())
         };
 
         debug!("env_deref ret {:?}", ret);

@@ -299,7 +299,7 @@ enum CombineMapType {
 
 type CombineMap<'tcx> = FxHashMap<TwoRegions<'tcx>, RegionVid>;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct RegionVariableInfo {
     pub origin: RegionVariableOrigin,
     pub universe: ty::UniverseIndex,
@@ -504,9 +504,9 @@ impl<'tcx> RegionConstraintCollector<'tcx> {
     pub fn new_region_var(
         &mut self,
         universe: ty::UniverseIndex,
-        origin: RegionVariableOrigin,
+        origin: &RegionVariableOrigin,
     ) -> RegionVid {
-        let vid = self.var_infos.push(RegionVariableInfo { origin, universe });
+        let vid = self.var_infos.push(RegionVariableInfo { origin: origin.clone(), universe });
 
         let u_vid = self
             .unification_table
@@ -529,7 +529,7 @@ impl<'tcx> RegionConstraintCollector<'tcx> {
 
     /// Returns the origin for the given variable.
     pub fn var_origin(&self, vid: RegionVid) -> RegionVariableOrigin {
-        self.var_infos[vid].origin
+        self.var_infos[vid].origin.clone()
     }
 
     /// Removes all the edges to/from the placeholder regions that are
@@ -810,7 +810,7 @@ impl<'tcx> RegionConstraintCollector<'tcx> {
         let a_universe = self.universe(a);
         let b_universe = self.universe(b);
         let c_universe = cmp::max(a_universe, b_universe);
-        let c = self.new_region_var(c_universe, MiscVariable(origin.span()));
+        let c = self.new_region_var(c_universe, &MiscVariable(origin.span()));
         self.combine_map(t).insert(vars, c);
         if self.in_snapshot() {
             self.undo_log.push(AddCombination(t, vars));

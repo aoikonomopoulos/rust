@@ -371,7 +371,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
                         } else {
                             self.report_sub_sup_conflict(
                                 region_scope_tree,
-                                var_origin,
+                                &var_origin,
                                 sub_origin,
                                 sub_r,
                                 sup_origin,
@@ -1446,7 +1446,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     fn report_sub_sup_conflict(
         &self,
         region_scope_tree: &region::ScopeTree,
-        var_origin: RegionVariableOrigin,
+        var_origin: &RegionVariableOrigin,
         sub_origin: SubregionOrigin<'tcx>,
         sub_region: Region<'tcx>,
         sup_origin: SubregionOrigin<'tcx>,
@@ -1518,7 +1518,7 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
 impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
     fn report_inference_failure(
         &self,
-        var_origin: RegionVariableOrigin,
+        var_origin: &RegionVariableOrigin,
     ) -> DiagnosticBuilder<'tcx> {
         let br_string = |br: ty::BoundRegion| {
             let mut s = match br {
@@ -1537,15 +1537,15 @@ impl<'a, 'gcx, 'tcx> InferCtxt<'a, 'gcx, 'tcx> {
             infer::Autoref(_) => " for autoref".to_string(),
             infer::Coercion(_) => " for automatic coercion".to_string(),
             infer::LateBoundRegion(_, br, infer::FnCall) => {
-                format!(" for lifetime parameter {}in function call", br_string(br))
+                format!(" for lifetime parameter {}in function call", br_string(*br))
             }
             infer::LateBoundRegion(_, br, infer::HigherRankedType) => {
-                format!(" for lifetime parameter {}in generic type", br_string(br))
+                format!(" for lifetime parameter {}in generic type", br_string(*br))
             }
             infer::LateBoundRegion(_, br, infer::AssocTypeProjection(def_id)) => format!(
                 " for lifetime parameter {}in trait containing associated type `{}`",
-                br_string(br),
-                self.tcx.associated_item(def_id).ident
+                br_string(*br),
+                self.tcx.associated_item(*def_id).ident
             ),
             infer::EarlyBoundRegion(_, name) => format!(" for lifetime parameter `{}`", name),
             infer::BoundRegionInCoherence(name) => {

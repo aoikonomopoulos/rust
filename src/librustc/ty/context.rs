@@ -674,8 +674,8 @@ impl<'tcx> TypeckTables<'tcx> {
         }
     }
 
-    pub fn upvar_capture(&self, upvar_id: ty::UpvarId) -> ty::UpvarCapture<'tcx> {
-        self.upvar_capture_map[&upvar_id]
+    pub fn upvar_capture(&self, upvar_id: &ty::UpvarId) -> ty::UpvarCapture<'tcx> {
+        self.upvar_capture_map[upvar_id]
     }
 
     pub fn closure_kind_origins(&self) -> LocalTableInContext<'_, (Span, ast::Name)> {

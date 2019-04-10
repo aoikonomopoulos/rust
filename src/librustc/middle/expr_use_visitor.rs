@@ -949,7 +949,7 @@ impl<'a, 'gcx, 'tcx> ExprUseVisitor<'a, 'gcx, 'tcx> {
                     var_path: ty::UpvarPath { hir_id: var_hir_id },
                     closure_expr_id: closure_def_id.to_local(),
                 };
-                let upvar_capture = self.mc.tables.upvar_capture(upvar_id);
+                let upvar_capture = self.mc.tables.upvar_capture(&upvar_id);
                 let cmt_var = return_if_err!(self, self.cat_captured_var(closure_expr.hir_id,
                                                                    fn_decl_span,
                                                                    freevar));
