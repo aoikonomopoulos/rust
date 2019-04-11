@@ -390,6 +390,7 @@ pub struct TypeckTables<'tcx> {
 
     /// Borrows
     pub upvar_capture_map: ty::UpvarCaptureMap<'tcx>,
+    pub upvar_capture_map_2229: ty::UpvarCaptureMap<'tcx>,
 
     /// Records the reasons that we picked the kind of each closure;
     /// not all closures are present in the map.
@@ -454,6 +455,7 @@ impl<'tcx> TypeckTables<'tcx> {
             pat_binding_modes: Default::default(),
             pat_adjustments: Default::default(),
             upvar_capture_map: Default::default(),
+            upvar_capture_map_2229: Default::default(),
             closure_kind_origins: Default::default(),
             liberated_fn_sigs: Default::default(),
             fru_field_types: Default::default(),
@@ -751,6 +753,7 @@ impl<'a, 'gcx> HashStable<StableHashingContext<'a>> for TypeckTables<'gcx> {
             ref pat_binding_modes,
             ref pat_adjustments,
             ref upvar_capture_map,
+            ref upvar_capture_map_2229,
             ref closure_kind_origins,
             ref liberated_fn_sigs,
             ref fru_field_types,
@@ -780,7 +783,28 @@ impl<'a, 'gcx> HashStable<StableHashingContext<'a>> for TypeckTables<'gcx> {
                 let ty::UpvarId {
                     var_path,
                     closure_expr_id
-                } = *up_var_id;
+                } = up_var_id;
+
+                let local_id_root =
+                    local_id_root.expect("trying to hash invalid TypeckTables");
+
+                let var_owner_def_id = DefId {
+                    krate: local_id_root.krate,
+                    index: var_path.hir_id.owner,
+                };
+                let closure_def_id = DefId {
+                    krate: local_id_root.krate,
+                    index: closure_expr_id.to_def_id().index,
+                };
+                (hcx.def_path_hash(var_owner_def_id),
+                 var_path.hir_id.local_id,
+                 hcx.def_path_hash(closure_def_id))
+            });
+            hash_stable_hashmap(hcx, hasher, upvar_capture_map_2229, |up_var_id, hcx| {
+                let ty::UpvarId {
+                    var_path,
+                    closure_expr_id
+                } = up_var_id;
 
                 let local_id_root =
                     local_id_root.expect("trying to hash invalid TypeckTables");
@@ -813,7 +837,7 @@ impl<'a, 'gcx> HashStable<StableHashingContext<'a>> for TypeckTables<'gcx> {
                 let ty::UpvarId {
                     var_path,
                     closure_expr_id
-                } = *up_var_id;
+                } = up_var_id;
 
                 let local_id_root =
                     local_id_root.expect("trying to hash invalid TypeckTables");

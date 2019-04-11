@@ -722,9 +722,10 @@ impl<T> List<T> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable, HashStable)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable, HashStable)]
 pub struct UpvarPath {
     pub hir_id: hir::HirId,
+    pub capture_path: CapturePath,
 }
 
 /// Upvars do not get their own `NodeId`. Instead, we use the pair of
@@ -833,7 +834,7 @@ pub enum CapturePathComponent {
     Deref,
 }
 
-#[derive(Clone, Debug, Eq, Hash, HashStable, Ord, PartialEq, PartialOrd,
+#[derive(Clone, Debug, Default, Eq, Hash, HashStable, Ord, PartialEq, PartialOrd,
          RustcEncodable, RustcDecodable)]
 pub struct CapturePath(pub Vec<CapturePathComponent>);
 pub type UpvarCapturePathMap<'tcx> = FxHashMap<CapturePath, UpvarCapture<'tcx>>;

@@ -159,6 +159,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                 let upvar_id = ty::UpvarId {
                     var_path: ty::UpvarPath {
                         hir_id: self.tcx.hir().node_to_hir_id(freevar.var_id()),
+                        capture_path: Default::default(),
                     },
                     closure_expr_id: LocalDefId::from_def_id(closure_def_id),
                 };
@@ -246,24 +247,24 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
               .get(&closure_def_id)
               .unwrap_or(&vec![])
               .iter()
-              .map(|upvar_id| upvar_id.var_path)
-              .collect::<FxHashSet<ty::UpvarPath>>()).is_superset(
+              .map(|upvar_id| &upvar_id.var_path)
+              .collect::<FxHashSet<&ty::UpvarPath>>()).is_superset(
                 &delegate.upvar_captures
                     .keys()
-                    .map(|upvar_id| upvar_id.var_path)
-                    .collect::<FxHashSet<ty::UpvarPath>>()) {
+                    .map(|upvar_id| &upvar_id.var_path)
+                    .collect::<FxHashSet<&ty::UpvarPath>>()) {
                 let empty = vec![];
                 let tables = self.tables.borrow();
-                let keys1: FxHashSet<ty::UpvarPath> = tables
+                let keys1: FxHashSet<&ty::UpvarPath> = tables
                     .upvar_list
                     .get(&closure_def_id)
                     .unwrap_or(&empty)
                     .iter()
-                    .map(|upvar_id| upvar_id.var_path)
+                    .map(|upvar_id| &upvar_id.var_path)
                     .collect();
-                let keys2: FxHashSet<ty::UpvarPath> = delegate.upvar_captures
+                let keys2: FxHashSet<&ty::UpvarPath> = delegate.upvar_captures
                     .keys()
-                    .map(|upvar_id| upvar_id.var_path)
+                    .map(|upvar_id| &upvar_id.var_path)
                     .collect();
                 bug!("{:#?} is not a superset of {:#?}",
                      keys1,
@@ -331,7 +332,10 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                     let var_hir_id = tcx.hir().node_to_hir_id(var_node_id);
                     let freevar_ty = self.node_ty(var_hir_id);
                     let upvar_id = ty::UpvarId {
-                        var_path: ty::UpvarPath { hir_id: var_hir_id },
+                        var_path: ty::UpvarPath {
+                            hir_id: var_hir_id,
+                            capture_path: Default::default(), // FIXME
+                        },
                         closure_expr_id: LocalDefId::from_def_id(closure_def_index),
                     };
                     let capture = self.tables.borrow().upvar_capture(&upvar_id);

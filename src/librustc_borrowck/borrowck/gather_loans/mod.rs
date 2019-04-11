@@ -459,7 +459,13 @@ impl<'a, 'tcx> GatherLoanCtxt<'a, 'tcx> {
                     }
                     None
                 }
-                LpUpvar(ty::UpvarId{ var_path: ty::UpvarPath { hir_id }, closure_expr_id: _ }) => {
+                LpUpvar(ty::UpvarId{
+                    var_path: ty::UpvarPath {
+                        hir_id,
+                        capture_path: _, // FIXME
+                    },
+                    closure_expr_id: _
+                }) => {
                     self.bccx.used_mut_nodes.borrow_mut().insert(hir_id);
                     None
                 }
