@@ -1,0 +1,156 @@
+note: closure capture path
+  --> $DIR/closure-partial-captures.rs:32:14
+   |
+LL |       let _c = || {
+   |  ______________^
+LL | |         // -^ NOTE Upvar local interior CapturePath([Field(a1), Field(b1), Field(d)]): ByRef immutable
+LL | |         interior.a1.b1.d + 1
+LL | |     };
+   | |_____^
+   |
+   = note: Upvar local interior CapturePath([Field(a1), Field(b1), Field(d)]): ByRef immutable
+
+note: closure capture path
+  --> $DIR/closure-partial-captures.rs:41:14
+   |
+LL |       let _c = || {
+   |  ______________^
+LL | |         // -^ NOTE Upvar local interior CapturePath([Field(a2)]): ByRef immutable
+LL | |         interior.a2.c1.d + interior.a2.c2.d
+LL | |     };
+   | |_____^
+   |
+   = note: Upvar local interior CapturePath([Field(a2)]): ByRef immutable
+
+note: closure capture path
+  --> $DIR/closure-partial-captures.rs:51:15
+   |
+LL |       let _c1 = || {
+   |  _______________^
+LL | |         // -^ NOTE Upvar local interior1 CapturePath([Field(a2)]): ByRef mutable
+LL | |         ref_imm(&interior1.a2.c1.d);
+LL | |         ref_mut(&mut interior1.a2.c2.d);
+LL | |     };
+   | |_____^
+   |
+   = note: Upvar local mut interior1 CapturePath([Field(a2)]): ByRef mutable
+
+note: closure capture path
+  --> $DIR/closure-partial-captures.rs:56:15
+   |
+LL |       let _c2 = || {
+   |  _______________^
+LL | |         // -^ NOTE Upvar local interior1 CapturePath([Field(a2)]): ByRef mutable
+LL | |         ref_mut(&mut interior2.a2.c2.d);
+LL | |         ref_imm(&interior2.a2.c1.d);
+LL | |     };
+   | |_____^
+   |
+   = note: Upvar local mut interior2 CapturePath([Field(a2)]): ByRef mutable
+
+note: closure capture path
+  --> $DIR/closure-partial-captures.rs:66:14
+   |
+LL |       let _c = || {
+   |  ______________^
+LL | |         // -^ NOTE Upvar local cb CapturePath([]): ByRef immutable
+LL | |         ref_imm(&cb);
+LL | |     };
+   | |_____^
+   |
+   = note: Upvar local cb CapturePath([]): ByRef immutable
+
+note: closure capture path
+  --> $DIR/closure-partial-captures.rs:75:14
+   |
+LL |       let _c = || {
+   |  ______________^
+LL | |         // -^ NOTE Upvar local cbm CapturePath([]): ByRef mutable
+LL | |         cbm += 1
+LL | |     };
+   | |_____^
+   |
+   = note: Upvar local mut cbm CapturePath([]): ByRef mutable
+
+note: closure capture path
+  --> $DIR/closure-partial-captures.rs:85:14
+   |
+LL |       let _c = || {
+   |  ______________^
+LL | |         // -^ NOTE Upvar local cbu CapturePath([]): ByRef unique immutable
+LL | |         *cbu += 1
+LL | |     };
+   | |_____^
+   |
+   = note: Upvar local cbu CapturePath([]): ByRef unique immutable
+
+note: closure capture path
+  --> $DIR/closure-partial-captures.rs:94:14
+   |
+LL |       let _c = move || {
+   |  ______________^
+LL | |         // -^ NOTE Upvar local cm CapturePath([]): ByValue
+LL | |         cm + 1
+LL | |     };
+   | |_____^
+   |
+   = note: Upvar local cm CapturePath([]): ByValue
+
+note: closure capture path
+  --> $DIR/closure-partial-captures.rs:103:14
+   |
+LL |       let _c = move || {
+   |  ______________^
+LL | |         // -^ NOTE Upvar local cb CapturePath([]): ByValue
+LL | |         cmm += 1
+LL | |     };
+   | |_____^
+   |
+   = note: Upvar local mut cmm CapturePath([]): ByValue
+
+note: closure capture path
+  --> $DIR/closure-partial-captures.rs:112:14
+   |
+LL |       let _c = || {
+   |  ______________^
+LL | |         // -^ NOTE Upvar local interior1 CapturePath([Field(a1)]): ByValue
+LL | |         match interior1 {
+LL | |             A {a1, ..} => { // This hits `upvar::consume_pat`
+...  |
+LL | |         }
+LL | |     };
+   | |_____^
+   |
+   = note: Upvar local interior1 CapturePath([Field(a1)]): ByValue
+
+note: closure capture path
+  --> $DIR/closure-partial-captures.rs:121:14
+   |
+LL |       let _c = || {
+   |  ______________^
+LL | |         // -^ NOTE Upvar local interior2 CapturePath([Field(a2)]): ByRef immutable
+LL | |         match interior2 {
+LL | |             A {ref a2, ..} => {
+...  |
+LL | |         }
+LL | |     };
+   | |_____^
+   |
+   = note: Upvar local interior2 CapturePath([Field(a2)]): ByRef immutable
+
+note: closure capture path
+  --> $DIR/closure-partial-captures.rs:130:14
+   |
+LL |       let _c = || {
+   |  ______________^
+LL | |         // -^ NOTE Upvar local mut interior3 CapturePath([Field(a1)]): ByRef mutable
+LL | |         match interior3 {
+LL | |             A {ref mut a1, ..} => {
+...  |
+LL | |         }
+LL | |     };
+   | |_____^
+   |
+   = note: Upvar local mut interior3 CapturePath([Field(a1)]): ByRef mutable
+
+
