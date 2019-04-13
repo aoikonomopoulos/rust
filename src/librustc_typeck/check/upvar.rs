@@ -598,7 +598,9 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
     }
     fn capture_path_by_cmt(&self, cmt: &mc::cmt_<'tcx>) -> (Option<ty::UpvarId>, ty::CapturePath) {
         let (upvar, path) = self.capture_path_by_cmt_inner(vec![], cmt);
-        (upvar, ty::CapturePath(path.into_iter().rev().collect()))
+        let path = ty::CapturePath(path.into_iter().rev().collect());
+        debug!("capture_path_by_cmt: ret={:?}", path);
+        (upvar, path)
     }
 
     fn adjust_upvar_borrow_kind_for_consume(
@@ -848,6 +850,7 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
                 let span = self.span;
                 let capture_clause = self.capture_clause;
                 paths_for_upvar.entry(path).or_insert_with(|| {
+                    // FIXME: can't get here?
                     match capture_clause {
                         hir::CaptureByValue => ty::UpvarCapture::ByValue,
                         hir::CaptureByRef => {
@@ -871,19 +874,24 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
                 // Upvar is already by-value, the strongest criteria.
             }
             ty::UpvarCapture::ByRef(mut upvar_borrow) => {
+                debug!("adjust_upvar_borrow_kind: prev {:?} vs new {:?}",
+                       upvar_borrow.kind, kind);
                 match (upvar_borrow.kind, kind) {
                     // Take RHS:
                     (ty::ImmBorrow, ty::UniqueImmBorrow)
                     | (ty::ImmBorrow, ty::MutBorrow)
                     | (ty::UniqueImmBorrow, ty::MutBorrow) => {
                         upvar_borrow.kind = kind;
+                        debug!("adjust_upvar_borrow_kind prop {:?}", upvar_borrow);
                         *capture = ty::UpvarCapture::ByRef(upvar_borrow);
                     }
                     // Take LHS:
                     (ty::ImmBorrow, ty::ImmBorrow)
                     | (ty::UniqueImmBorrow, ty::ImmBorrow)
                     | (ty::UniqueImmBorrow, ty::UniqueImmBorrow)
-                    | (ty::MutBorrow, _) => {}
+                    | (ty::MutBorrow, _) => {
+                        debug!("adjust_upvar_borrow_kind prop no need");
+                    }
                 }
             }
         }
@@ -943,7 +951,7 @@ impl<'a, 'gcx, 'tcx> euv::Delegate<'tcx> for InferBorrowKind<'a, 'gcx, 'tcx> {
         cmt: &mc::cmt_<'tcx>,
         mode: euv::ConsumeMode,
     ) {
-        debug!("consume(cmt={:?},mode={:?})", cmt, mode);
+        debug!("consume(cmt={:#?},mode={:?})", cmt, mode);
         self.initialize_capture_path(cmt);
         self.adjust_upvar_borrow_kind_for_consume(cmt, mode);
     }
@@ -962,7 +970,7 @@ impl<'a, 'gcx, 'tcx> euv::Delegate<'tcx> for InferBorrowKind<'a, 'gcx, 'tcx> {
         cmt: &mc::cmt_<'tcx>,
         mode: euv::ConsumeMode,
     ) {
-        debug!("consume_pat(cmt={:?},mode={:?})", cmt, mode);
+        debug!("consume_pat(cmt={:#?},mode={:?})", cmt, mode);
         self.initialize_capture_path(cmt);
         self.adjust_upvar_borrow_kind_for_consume(cmt, mode);
     }
@@ -977,7 +985,7 @@ impl<'a, 'gcx, 'tcx> euv::Delegate<'tcx> for InferBorrowKind<'a, 'gcx, 'tcx> {
         _loan_cause: euv::LoanCause,
     ) {
         debug!(
-            "borrow(borrow_id={}, cmt={:?}, bk={:?})",
+            "borrow(borrow_id={}, cmt={:#?}, bk={:?})",
             borrow_id, cmt, bk
         );
 
@@ -1002,7 +1010,7 @@ impl<'a, 'gcx, 'tcx> euv::Delegate<'tcx> for InferBorrowKind<'a, 'gcx, 'tcx> {
         assignee_cmt: &mc::cmt_<'tcx>,
         _mode: euv::MutateMode,
     ) {
-        debug!("mutate(assignee_cmt={:?})", assignee_cmt);
+        debug!("mutate(assignee_cmt={:#?})", assignee_cmt);
 
         self.initialize_capture_path(assignee_cmt); // FIXME: completely untested
         self.adjust_upvar_borrow_kind_for_mut(assignee_cmt);
