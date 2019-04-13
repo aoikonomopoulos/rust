@@ -64,7 +64,7 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
         let mut errors_buffer = Vec::new();
         for (upvar_id, path_map) in self.tables.borrow().upvar_captures.iter() {
             let upvar_node_id = tcx.hir().hir_to_node_id(upvar_id.var_path.hir_id);
-            let upvar = tcx.hir().node_to_string(upvar_node_id);
+            let upvar = tcx.hir().node_to_user_string(upvar_node_id);
             let closure_node_id = tcx.hir().local_def_id_to_node_id(upvar_id.closure_expr_id);
             let span = tcx.hir().span(closure_node_id);
             for (path, capture) in path_map {
