@@ -44,6 +44,7 @@ use rustc::infer::UpvarRegion;
 use rustc::ty::{self, Ty, TyCtxt, UpvarSubsts};
 use syntax::ast;
 use syntax_pos::Span;
+use std::cmp::Ordering;
 use rustc_data_structures::fx::FxHashSet;
 
 impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
@@ -82,6 +83,102 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                 DiagnosticBuilder::new_diagnostic(tcx.sess.diagnostic(), diag).emit();
             }
         }
+    }
+}
+
+fn upvar_captures_bk_propagate_upwards<'tcx>(path_map: &ty::UpvarCapturePathMap<'tcx>)
+                                       -> ty::UpvarCapturePathMap<'tcx> {
+    let mut adjustments: ty::UpvarCapturePathMap<'_> = Default::default();
+    let mut keys = path_map.keys().collect::<Vec<_>>();
+    // Sort by larger length, so we'll be doing this bottom-up
+    keys.sort_by(|a, b| {
+        let len_a = a.0.len();
+        let len_b = b.0.len();
+        if len_a > len_b {
+            Ordering::Less
+        } else if len_b < len_a {
+            Ordering::Greater
+        } else {
+            Ordering::Equal
+        }
+    });
+    let sorted = keys.into_iter().map(|k| {
+        (k, path_map.get(k).unwrap())
+    });
+    // For each path a.b.c (starting from the longest ones)...
+    for (path, capture) in sorted {
+        debug!("prop for path {:?}", path);
+        let mut path = path.0.clone();
+        // FIXME: this is suboptimal; we repeat work when a parent's
+        // UpvarCapture has been promoted by a child (which will do
+        // that for all ancestors) but then we revisit the ancestors
+        // when looking at the parent.
+        loop {
+            // For a.b.c, visit a.b, then a, then [].
+            path.pop();
+            debug!("prop loop, path={:?}", path);
+            match path_map.get(&ty::CapturePath(path.clone())) {
+                Some(parent_capture) => {
+                    debug!("prop: Got parent");
+                    match parent_capture {
+                        ty::UpvarCapture::ByValue => {
+                            debug!("prop: parent capture is ByValue, skipping");
+                        },
+                        ty::UpvarCapture::ByRef(parent_borrow) => {
+                            debug!("prop: parent={:?} us={:?}", parent_capture, capture);
+                            match capture {
+                                ty::UpvarCapture::ByValue => {
+                                    debug!("prop ByValue");
+                                    adjustments.insert(ty::CapturePath(path.clone()),
+                                                       ty::UpvarCapture::ByValue);
+                                },
+                                ty::UpvarCapture::ByRef(borrow) => {
+                                    match (parent_borrow.kind, borrow.kind) {
+                                        // Take RHS:
+                                        (ty::ImmBorrow, ty::UniqueImmBorrow)
+                                            | (ty::ImmBorrow, ty::MutBorrow)
+                                            | (ty::UniqueImmBorrow, ty::MutBorrow) => {
+                                                let nborrow = ty::UpvarBorrow {
+                                                    kind: borrow.kind,
+                                                    region: parent_borrow.region,
+                                                };
+                                                debug!("prop ByRef {:?}", nborrow);
+                                                adjustments.insert(ty::CapturePath(path.clone()),
+                                                                   ty::UpvarCapture::ByRef(
+                                                                       nborrow));
+                                            }
+                                        // Take LHS:
+                                        (ty::ImmBorrow, ty::ImmBorrow)
+                                            | (ty::UniqueImmBorrow, ty::ImmBorrow)
+                                            | (ty::UniqueImmBorrow, ty::UniqueImmBorrow)
+                                            | (ty::MutBorrow, _) => {
+                                                debug!("prop parent is stronger, skipping")
+                                            },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                None => {
+                    // If an ancestor path does not have an associated
+                    // UpvarCapture, move on to the next ancestor.
+                    debug!("prop: no parent");
+                },
+            }
+            if path.is_empty() {
+                break
+            }
+        }
+    }
+    adjustments
+}
+
+fn upvar_captures_effect_tree(upvar_captures: &mut ty::UpvarMap<'_>) {
+    for (upvar, path_map) in upvar_captures.iter_mut() {
+        let adjustments = upvar_captures_bk_propagate_upwards(path_map);
+        debug!("adjustments for {:?}: {:#?}", upvar, adjustments);
+        path_map.extend(adjustments);
     }
 }
 
@@ -237,6 +334,8 @@ impl<'a, 'gcx, 'tcx> FnCtxt<'a, 'gcx, 'tcx> {
                     .insert(closure_hir_id, origin);
             }
         }
+
+        upvar_captures_effect_tree(&mut delegate.upvar_captures);
         // Ensure that we have captured /a/ path for every upvar; this
         // is not sufficient to guarantee we haven't missed a path;
         // but, if we've completely missed an upvar, we'll know.
