@@ -440,7 +440,7 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
                 acc.push(CPC::Field(*name));
                 self.capture_path_by_cmt_inner(acc, &cmt)
             },
-            Deref(cmt, _) => {
+            Deref(referent_cmt, _) => {
                 debug!("capture_path_by_cmt: in Deref; note {:?}", cmt.note);
                 match &cmt.note {
                     mc::NoteClosureEnv(upvar_id) |
@@ -451,7 +451,7 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
                     mc::NoteNone => {
                         debug!("capture_path_by_cmt: push Vanilla Deref");
                         acc.push(CPC::Deref);
-                        self.capture_path_by_cmt_inner(acc, &cmt)
+                        self.capture_path_by_cmt_inner(acc, &referent_cmt)
                     }
                     mc::NoteIndex => {
                         // FIXME
@@ -461,7 +461,7 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
                         // to throw away both anything we've accumulated so
                         // far and the current Deref.
                         debug!("capture_path_by_cmt: NoteIndex, dropping {:?}", acc);
-                        self.capture_path_by_cmt_inner(vec![], &cmt)
+                        self.capture_path_by_cmt_inner(vec![], &referent_cmt)
                     }
                 }
             },
