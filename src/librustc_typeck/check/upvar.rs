@@ -690,7 +690,8 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
     /// Indicates that `cmt` is being directly mutated (e.g., assigned
     /// to). If cmt contains any by-ref upvars, this implies that
     /// those upvars must be borrowed using an `&mut` borrow.
-    fn adjust_upvar_borrow_kind_for_mut(&mut self, cmt: &mc::cmt_<'tcx>) {
+    fn adjust_upvar_borrow_kind_for_mut(&mut self, orig_cmt: &mc::cmt_<'tcx>,
+                                        cmt: &mc::cmt_<'tcx>) {
         debug!("adjust_upvar_borrow_kind_for_mut(cmt={:?})", cmt);
 
         match cmt.cat.clone() {
@@ -699,16 +700,16 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
             | Categorization::Downcast(base, _) => {
                 // Interior or owned data is mutable if base is
                 // mutable, so iterate to the base.
-                self.adjust_upvar_borrow_kind_for_mut(&base);
+                self.adjust_upvar_borrow_kind_for_mut(orig_cmt, &base);
             }
 
             Categorization::Deref(base, mc::BorrowedPtr(..)) => {
-                if !self.try_adjust_upvar_deref(cmt, ty::MutBorrow) {
+                if !self.try_adjust_upvar_deref(orig_cmt, cmt, ty::MutBorrow) {
                     // assignment to deref of an `&mut`
                     // borrowed pointer implies that the
                     // pointer itself must be unique, but not
                     // necessarily *mutable*
-                    self.adjust_upvar_borrow_kind_for_unique(&base);
+                    self.adjust_upvar_borrow_kind_for_unique(orig_cmt, &base);
                 }
             }
 
@@ -723,7 +724,8 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
         }
     }
 
-    fn adjust_upvar_borrow_kind_for_unique(&mut self, cmt: &mc::cmt_<'tcx>) {
+    fn adjust_upvar_borrow_kind_for_unique(&mut self, orig_cmt: &mc::cmt_<'tcx>,
+                                           cmt: &mc::cmt_<'tcx>) {
         debug!("adjust_upvar_borrow_kind_for_unique(cmt={:?})", cmt);
 
         match cmt.cat.clone() {
@@ -732,14 +734,14 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
             | Categorization::Downcast(base, _) => {
                 // Interior or owned data is unique if base is
                 // unique.
-                self.adjust_upvar_borrow_kind_for_unique(&base);
+                self.adjust_upvar_borrow_kind_for_unique(orig_cmt, &base);
             }
 
             Categorization::Deref(base, mc::BorrowedPtr(..)) => {
-                if !self.try_adjust_upvar_deref(cmt, ty::UniqueImmBorrow) {
+                if !self.try_adjust_upvar_deref(orig_cmt, cmt, ty::UniqueImmBorrow) {
                     // for a borrowed pointer to be unique, its
                     // base must be unique
-                    self.adjust_upvar_borrow_kind_for_unique(&base);
+                    self.adjust_upvar_borrow_kind_for_unique(orig_cmt, &base);
                 }
             }
 
@@ -754,6 +756,7 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
 
     fn try_adjust_upvar_deref(
         &mut self,
+        orig_cmt: &mc::cmt_<'tcx>,
         cmt: &mc::cmt_<'tcx>,
         borrow_kind: ty::BorrowKind,
     ) -> bool {
@@ -773,7 +776,7 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
                 // upvar, then we need to modify the
                 // borrow_kind of the upvar to make sure it
                 // is inferred to mutable if necessary
-                self.adjust_upvar_borrow_kind(upvar_id, borrow_kind, cmt);
+                self.adjust_upvar_borrow_kind(upvar_id, borrow_kind, orig_cmt);
 
                 // also need to be in an FnMut closure since this is not an ImmBorrow
                 self.adjust_closure_kind(
@@ -841,7 +844,7 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
                 }
             }
         }
-        let capture = match self.capture_path_by_cmt(&cmt) {
+        let capture = match self.capture_path_by_cmt(cmt) {
             (Some(cmt_upvar_id), path) => {
                 assert!(cmt_upvar_id == *upvar_id);
                 let paths_for_upvar = self.
@@ -993,10 +996,10 @@ impl<'a, 'gcx, 'tcx> euv::Delegate<'tcx> for InferBorrowKind<'a, 'gcx, 'tcx> {
         match bk {
             ty::ImmBorrow => {}
             ty::UniqueImmBorrow => {
-                self.adjust_upvar_borrow_kind_for_unique(cmt);
+                self.adjust_upvar_borrow_kind_for_unique(cmt, cmt);
             }
             ty::MutBorrow => {
-                self.adjust_upvar_borrow_kind_for_mut(cmt);
+                self.adjust_upvar_borrow_kind_for_mut(cmt, cmt);
             }
         }
     }
@@ -1013,7 +1016,7 @@ impl<'a, 'gcx, 'tcx> euv::Delegate<'tcx> for InferBorrowKind<'a, 'gcx, 'tcx> {
         debug!("mutate(assignee_cmt={:#?})", assignee_cmt);
 
         self.initialize_capture_path(assignee_cmt); // FIXME: completely untested
-        self.adjust_upvar_borrow_kind_for_mut(assignee_cmt);
+        self.adjust_upvar_borrow_kind_for_mut(assignee_cmt, assignee_cmt);
     }
 }
 
