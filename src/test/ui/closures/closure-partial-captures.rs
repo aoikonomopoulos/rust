@@ -1,3 +1,4 @@
+#![feature(thread_local)]
 // compile-pass
 // ignore-test
 #![feature(rustc_attrs)]
@@ -165,6 +166,35 @@ fn capture_pat() {
     };
 }
 
+static GLOBAL: usize = 7;
+
+#[rustc_dump_closure_captures]
+fn no_capture_static() {
+    let _ = || {
+        ref_imm(&GLOBAL); // Should not be captured
+    };
+}
+
+use std::cell::RefCell;
+
+#[thread_local]
+static TLS: RefCell<u32> = RefCell::new(1);
+
+#[rustc_dump_closure_captures]
+fn no_capture_thread_local() {
+    let _ = || {
+        ref_imm(&TLS); // Should not be captured
+    };
+}
+
+#[rustc_dump_closure_captures]
+fn no_capture_local() {
+    let _ = || {
+        let x = 7; // Should not be captured
+        ref_imm(&x)
+    };
+}
+
 // The UpvarCapture can be
 // - by value
 // - by ref, for which the borrow kind may be
@@ -182,4 +212,7 @@ fn main() {
     empty_path_move();
     empty_path_move_mut();
     capture_pat();
+    no_capture_static();
+    no_capture_thread_local();
+    no_capture_local();
 }

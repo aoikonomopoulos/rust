@@ -588,10 +588,14 @@ impl<'a, 'gcx, 'tcx> InferBorrowKind<'a, 'gcx, 'tcx> {
                 acc.push(CPC::Downcast(*variant));
                 self.capture_path_by_cmt_inner(acc, &cmt)
             }
-            ThreadLocal (..) | StaticItem | Local(..) => {
-                // FIXME: this cannot possibly resolve to an Upvar?
-                // But we do see them in practice
-                debug!("capture_path_by_cmt: other FIXME {:#?}", cmt.cat);
+            ThreadLocal (..) | StaticItem => {
+                // This is not capturing an upvar
+                debug!("capture_path_by_cmt: TL/SI {:#?}", cmt.cat);
+                (None, vec![])
+            }
+            Local(..) => {
+                // This does not refer to an upvar either
+                debug!("Got a Local in capture_path_by_cmt: {:#?}", cmt.cat);
                 (None, vec![])
             }
         }
